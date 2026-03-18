@@ -37,3 +37,24 @@ build/
 
 ### Mac OS ###
 .DS_Store
+
+target/
+
+# IDE files
+.idea/
+*.iml
+.vscode/
+.project
+.classpath
+.settings/
+
+# macOS finder files
+.DS_Store
+
+# logs
+*.log
+logs/
+
+# local database dumps / scratch sql
+*.sql~
+*.tmp.sql
