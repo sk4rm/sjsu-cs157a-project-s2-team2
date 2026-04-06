@@ -5,13 +5,14 @@
 ### Prerequisites
 
 - JetBrains IntelliJ IDEA
-- MySQL Server
+- MySQL Server + Workbench
 - Tomcat 10 or above
 - JDK 17 or above
 
 ### Database setup
 
-Import `schema.sql` to MySQL (i.e. through Workbench) prior to running the project.
+Import the schemas in `schemas/` to MySQL through Workbench as a Dump Project Folder (not self-contained files) prior to
+running the project.
 
 ### Running in `localhost`
 
