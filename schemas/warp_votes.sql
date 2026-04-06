@@ -27,7 +27,7 @@ DROP TABLE IF EXISTS `votes`;
 CREATE TABLE `votes` (
   `voter_id` int NOT NULL,
   `object_id` int NOT NULL,
-  `type` enum('+1','-1') NOT NULL,
+  `type` tinyint NOT NULL COMMENT '1 for upvote, -1 for downvote',
   PRIMARY KEY (`voter_id`,`object_id`),
   CONSTRAINT `fk_user_accounts_votes` FOREIGN KEY (`voter_id`) REFERENCES `user_accounts` (`id`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
