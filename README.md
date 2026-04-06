@@ -9,6 +9,10 @@
 - Tomcat 10 or above
 - JDK 17 or above
 
+### Database setup
+
+Import `schema.sql` to MySQL (i.e. through Workbench) prior to running the project.
+
 ### Running in `localhost`
 
 1. With the project open in IDEA, add a new run configuration in the top right of your window.
