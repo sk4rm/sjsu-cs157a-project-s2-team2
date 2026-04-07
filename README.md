@@ -13,6 +13,7 @@ virtual environment using persistent virtual "props".
 - MySQL Server + Workbench
 - Tomcat 10 or above
 - JDK 17 or above
+- Tailscale (for [HTTPS](#i-cant-use-my-cameragps))
 
 ### Database setup
 
@@ -35,15 +36,22 @@ running the project.
     credentials needed to access your MySQL server.
 12. Hit OK to finalize everything.
 13. You can now host the project by running this configuration.
+14. In a new terminal window. Run `tailscale serve 8080`. The output should then include the HTTPS link you can use to
+    connect to the website.
 
-## Troubleshooting
+### Troubleshooting
 
-**Camera feed is stretched**
+#### I can't use my camera/GPS
 
-To be fixed in the future.
+Ensure that you are using HTTPS, which you can check by the URL; it should begin with `https://`. HTTPS is required to
+access your mobile device's motion sensors for XR usage.
 
-**Stuck waiting for GPS lock**
+#### Camera allowed, but stuck waiting for GPS lock
 
 You may have disabled GPS permissions for your browser app. If you're using an iPhone, you can head to _Privacy &
 Security_ > _Location Services_ > Find your browser app > Set to any option besides _Never_. Then, refresh the page to
 re-allow all your camera and GPS.
+
+#### Camera feed is stretched
+
+To be fixed in the future.
