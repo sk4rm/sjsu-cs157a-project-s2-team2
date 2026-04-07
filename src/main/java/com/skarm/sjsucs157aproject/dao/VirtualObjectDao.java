@@ -4,6 +4,7 @@ import com.skarm.sjsucs157aproject.model.VirtualObject;
 import com.skarm.sjsucs157aproject.model.VirtualProp;
 import com.skarm.sjsucs157aproject.model.VirtualSignpost;
 import com.skarm.sjsucs157aproject.util.DbUtil;
+
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
@@ -11,17 +12,10 @@ import java.util.List;
 public class VirtualObjectDao {
 
     public List<VirtualObject> findAll() throws SQLException {
-        String sql = 
-            "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, p.file_hash as detail, 'prop' as subtype " +
-            "FROM virtual_objects v JOIN virtual_props p ON v.id = p.object_id " +
-            "UNION " +
-            "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, s.content as detail, 'signpost' as subtype " +
-            "FROM virtual_objects v JOIN virtual_signposts s ON v.id = s.object_id";
-            
+        String sql = "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, p.file_hash as detail, 'prop' as subtype " + "FROM virtual_objects v JOIN virtual_props p ON v.id = p.object_id " + "UNION " + "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, s.content as detail, 'signpost' as subtype " + "FROM virtual_objects v JOIN virtual_signposts s ON v.id = s.object_id";
+
         List<VirtualObject> objects = new ArrayList<>();
-        try (Connection conn = DbUtil.getConnection();
-             PreparedStatement ps = conn.prepareStatement(sql);
-             ResultSet rs = ps.executeQuery()) {
+        try (Connection conn = DbUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
             while (rs.next()) {
                 String subtype = rs.getString("subtype");
                 if ("prop".equals(subtype)) {
@@ -90,7 +84,7 @@ public class VirtualObjectDao {
             ps.setString(3, obj.getRotation());
             ps.setDouble(4, obj.getScale());
             ps.executeUpdate();
-            
+
             try (ResultSet rs = ps.getGeneratedKeys()) {
                 if (rs.next()) {
                     long id = rs.getLong(1);

@@ -12,11 +12,6 @@ public class DbUtil {
     private static final String DB_USER = getEnvOrDefault("DB_USER", "warp_user");
     private static final String DB_PASSWORD = getEnvOrDefault("DB_PASSWORD", "warp_password");
 
-    private static String getEnvOrDefault(String key, String defaultValue) {
-        String value = System.getenv(key);
-        return (value != null && !value.isBlank()) ? value : defaultValue;
-    }
-
     static {
         try {
             // MySQL 8+ driver class name
@@ -24,6 +19,11 @@ public class DbUtil {
         } catch (ClassNotFoundException e) {
             throw new RuntimeException("MySQL JDBC Driver not found in classpath", e);
         }
+    }
+
+    private static String getEnvOrDefault(String key, String defaultValue) {
+        String value = System.getenv(key);
+        return (value != null && !value.isBlank()) ? value : defaultValue;
     }
 
     public static Connection getConnection() throws SQLException {

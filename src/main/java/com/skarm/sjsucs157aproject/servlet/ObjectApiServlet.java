@@ -30,20 +30,12 @@ public class ObjectApiServlet extends HttpServlet {
             List<VirtualObject> objects = objectDao.findAll();
             JsonArrayBuilder arrayBuilder = Json.createArrayBuilder();
             for (VirtualObject obj : objects) {
-                JsonObjectBuilder objBuilder = Json.createObjectBuilder()
-                        .add("id", obj.getId())
-                        .add("userId", obj.getUserId())
-                        .add("latitude", obj.getLatitude())
-                        .add("longitude", obj.getLongitude())
-                        .add("rotation", obj.getRotation())
-                        .add("scale", obj.getScale());
+                JsonObjectBuilder objBuilder = Json.createObjectBuilder().add("id", obj.getId()).add("userId", obj.getUserId()).add("latitude", obj.getLatitude()).add("longitude", obj.getLongitude()).add("rotation", obj.getRotation()).add("scale", obj.getScale());
 
                 if (obj instanceof VirtualProp) {
-                    objBuilder.add("type", "prop")
-                              .add("fileHash", ((VirtualProp) obj).getFileHash());
+                    objBuilder.add("type", "prop").add("fileHash", ((VirtualProp) obj).getFileHash());
                 } else if (obj instanceof VirtualSignpost) {
-                    objBuilder.add("type", "signpost")
-                              .add("content", ((VirtualSignpost) obj).getContent());
+                    objBuilder.add("type", "signpost").add("content", ((VirtualSignpost) obj).getContent());
                 }
                 arrayBuilder.add(objBuilder);
             }

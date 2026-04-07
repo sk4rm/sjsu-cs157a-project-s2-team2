@@ -31,11 +31,7 @@ public class RegisterServlet extends HttpServlet {
         String confirmPassword = req.getParameter("confirmPassword");
         String heightStr = req.getParameter("heightMeter");
 
-        if (displayName == null || displayName.isBlank()
-                || username == null || username.isBlank()
-                || password == null || password.isBlank()
-                || confirmPassword == null || confirmPassword.isBlank()
-                || heightStr == null || heightStr.isBlank()) {
+        if (displayName == null || displayName.isBlank() || username == null || username.isBlank() || password == null || password.isBlank() || confirmPassword == null || confirmPassword.isBlank() || heightStr == null || heightStr.isBlank()) {
             HttpSession session = req.getSession();
             session.setAttribute("registerError", "All fields are required.");
             resp.sendRedirect(req.getContextPath() + "/#join");
