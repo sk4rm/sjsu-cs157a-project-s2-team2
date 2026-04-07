@@ -25,7 +25,7 @@ DROP TABLE IF EXISTS `virtual_objects`;
 /*!40101 SET @saved_cs_client     = @@character_set_client */;
 /*!50503 SET character_set_client = utf8mb4 */;
 CREATE TABLE `virtual_objects` (
-  `id` int NOT NULL,
+  `id` int NOT NULL AUTO_INCREMENT,
   `user_id` int NOT NULL,
   `position` point DEFAULT NULL,
   `rotation` varchar(255) DEFAULT '0,0,0,1' COMMENT 'Quaternion orientation (x,y,z,w)',
