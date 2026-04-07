@@ -218,22 +218,42 @@
                     // Avoid duplicates if we reload
                     if (document.getElementById('obj-' + obj.id)) return;
 
-                    const entity = document.createElement('a-box');
-                    entity.setAttribute('id', 'obj-' + obj.id);
-                    entity.setAttribute('gps-entity-place', `latitude: ${obj.latitude}; longitude: ${obj.longitude}`);
-                    entity.setAttribute('material', 'color: #d37f8f; opacity: 0.8');
-                    entity.setAttribute('scale', `${obj.scale} ${obj.scale} ${obj.scale}`);
-                    entity.setAttribute('rotation', obj.rotation);
-                    
-                    // Add a label
-                    const text = document.createElement('a-text');
-                    text.setAttribute('value', 'WARP PROP');
-                    text.setAttribute('align', 'center');
-                    text.setAttribute('position', '0 1.5 0');
-                    text.setAttribute('scale', '2 2 2');
-                    text.setAttribute('look-at', '[gps-camera]');
-                    entity.appendChild(text);
+                    let entity;
+                    if (obj.type === 'signpost') {
+                        // Signpost rendering: a floating text plate
+                        entity = document.createElement('a-entity');
+                        entity.setAttribute('id', 'obj-' + obj.id);
+                        entity.setAttribute('gps-entity-place', `latitude: ${obj.latitude}; longitude: ${obj.longitude}`);
+                        
+                        const text = document.createElement('a-text');
+                        text.setAttribute('value', obj.content || 'Empty Signpost');
+                        text.setAttribute('align', 'center');
+                        text.setAttribute('color', '#ffffff');
+                        text.setAttribute('scale', '4 4 4');
+                        text.setAttribute('look-at', '[gps-camera]');
+                        text.setAttribute('geometry', 'primitive: plane; width: auto; height: 0.3');
+                        text.setAttribute('material', 'color: #3f2b32; opacity: 0.8');
+                        entity.appendChild(text);
+                    } else {
+                        // Prop rendering: a 3D box
+                        entity = document.createElement('a-box');
+                        entity.setAttribute('id', 'obj-' + obj.id);
+                        entity.setAttribute('gps-entity-place', `latitude: ${obj.latitude}; longitude: ${obj.longitude}`);
+                        entity.setAttribute('material', 'color: #d37f8f; opacity: 0.8');
+                        
+                        const textLabel = document.createElement('a-text');
+                        textLabel.setAttribute('value', obj.fileHash || 'PROP');
+                        textLabel.setAttribute('align', 'center');
+                        textLabel.setAttribute('position', '0 1.2 0');
+                        textLabel.setAttribute('scale', '2 2 2');
+                        textLabel.setAttribute('look-at', '[gps-camera]');
+                        entity.appendChild(textLabel);
+                    }
 
+                    entity.setAttribute('scale', `${obj.scale} ${obj.scale} ${obj.scale}`);
+                    // Database uses quaternion "x,y,z,w", A-Frame standard rotation is Euler. 
+                    // For now, we'll maintain the orientation logic as a placeholder.
+                    
                     scene.appendChild(entity);
                 });
             } catch (err) {

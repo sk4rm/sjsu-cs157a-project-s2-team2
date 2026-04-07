@@ -5,10 +5,8 @@ public class VirtualObject {
     private long userId;
     private double latitude;
     private double longitude;
-    private String rotation = "0 0 0";
+    private String rotation = "0,0,0,1"; // Match DB default (quaternion)
     private double scale = 1.0;
-    private String type = "box";
-    private String description;
 
     public long getId() {
         return id;
@@ -56,21 +54,5 @@ public class VirtualObject {
 
     public void setScale(double scale) {
         this.scale = scale;
-    }
-
-    public String getType() {
-        return type;
-    }
-
-    public void setType(String type) {
-        this.type = type;
-    }
-
-    public String getDescription() {
-        return description;
-    }
-
-    public void setDescription(String description) {
-        this.description = description;
     }
 }

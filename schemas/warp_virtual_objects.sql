@@ -28,10 +28,8 @@ CREATE TABLE `virtual_objects` (
   `id` int NOT NULL,
   `user_id` int NOT NULL,
   `position` point DEFAULT NULL,
-  `rotation` varchar(255) DEFAULT '0 0 0' COMMENT 'Euler rotation (x y z)',
+  `rotation` varchar(255) DEFAULT '0,0,0,1' COMMENT 'Quaternion orientation (x,y,z,w)',
   `scale` decimal(10,4) DEFAULT '1.0000' COMMENT 'Uniform scale multiplier',
-  `type` varchar(45) DEFAULT 'box' COMMENT 'Prop type (box, sphere, etc.)',
-  `description` varchar(255) DEFAULT NULL,
   PRIMARY KEY (`id`),
   KEY `user_id_idx` (`user_id`),
   CONSTRAINT `user_id` FOREIGN KEY (`user_id`) REFERENCES `user_accounts` (`id`)
