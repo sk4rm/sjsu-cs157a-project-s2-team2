@@ -35,3 +35,15 @@ running the project.
     credentials needed to access your MySQL server.
 12. Hit OK to finalize everything.
 13. You can now host the project by running this configuration.
+
+## Troubleshooting
+
+**Camera feed is stretched**
+
+To be fixed in the future.
+
+**Stuck waiting for GPS lock**
+
+You may have disabled GPS permissions for your browser app. If you're using an iPhone, you can head to _Privacy &
+Security_ > _Location Services_ > Find your browser app > Set to any option besides _Never_. Then, refresh the page to
+re-allow all your camera and GPS.
