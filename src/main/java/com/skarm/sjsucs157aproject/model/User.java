@@ -1,4 +1,4 @@
-package com.skarm.sjsucs157aproject;
+package com.skarm.sjsucs157aproject.model;
 
 public class User {
     private long userId;
@@ -46,7 +46,4 @@ public class User {
     public void setHeightMeter(double heightMeter) {
         this.heightMeter = heightMeter;
     }
-
-
 }
-

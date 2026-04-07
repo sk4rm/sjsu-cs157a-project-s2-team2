@@ -1,4 +1,4 @@
-package com.skarm.sjsucs157aproject;
+package com.skarm.sjsucs157aproject.servlet;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
@@ -26,4 +26,3 @@ public class LogoutServlet extends HttpServlet {
         doPost(req, resp);
     }
 }
-

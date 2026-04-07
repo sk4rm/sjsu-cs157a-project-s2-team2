@@ -1,5 +1,7 @@
-package com.skarm.sjsucs157aproject;
+package com.skarm.sjsucs157aproject.servlet;
 
+import com.skarm.sjsucs157aproject.dao.UserDao;
+import com.skarm.sjsucs157aproject.model.User;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
@@ -77,4 +79,3 @@ public class AccountServlet extends HttpServlet {
         }
     }
 }
-

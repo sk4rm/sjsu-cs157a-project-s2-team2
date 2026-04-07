@@ -1,5 +1,7 @@
-package com.skarm.sjsucs157aproject;
+package com.skarm.sjsucs157aproject.dao;
 
+import com.skarm.sjsucs157aproject.model.User;
+import com.skarm.sjsucs157aproject.util.DbUtil;
 import java.sql.*;
 
 // Simple DAO for user database operations
@@ -73,4 +75,3 @@ public class UserDao {
         return user;
     }
 }
-

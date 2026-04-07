@@ -1,4 +1,4 @@
-package com.skarm.sjsucs157aproject;
+package com.skarm.sjsucs157aproject.util;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -21,4 +21,3 @@ public class PasswordUtil {
         }
     }
 }
-

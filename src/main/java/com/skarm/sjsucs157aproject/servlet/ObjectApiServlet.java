@@ -1,5 +1,9 @@
-package com.skarm.sjsucs157aproject;
+package com.skarm.sjsucs157aproject.servlet;
 
+import com.skarm.sjsucs157aproject.dao.VirtualObjectDao;
+import com.skarm.sjsucs157aproject.model.VirtualObject;
+import com.skarm.sjsucs157aproject.model.VirtualProp;
+import com.skarm.sjsucs157aproject.model.VirtualSignpost;
 import jakarta.json.Json;
 import jakarta.json.JsonArrayBuilder;
 import jakarta.json.JsonObjectBuilder;

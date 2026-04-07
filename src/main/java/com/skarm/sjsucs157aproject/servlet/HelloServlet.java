@@ -1,4 +1,4 @@
-package com.skarm.sjsucs157aproject;
+package com.skarm.sjsucs157aproject.servlet;
 
 import java.io.*;
 

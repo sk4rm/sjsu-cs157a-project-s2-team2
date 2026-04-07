@@ -1,5 +1,9 @@
-package com.skarm.sjsucs157aproject;
+package com.skarm.sjsucs157aproject.dao;
 
+import com.skarm.sjsucs157aproject.model.VirtualObject;
+import com.skarm.sjsucs157aproject.model.VirtualProp;
+import com.skarm.sjsucs157aproject.model.VirtualSignpost;
+import com.skarm.sjsucs157aproject.util.DbUtil;
 import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
