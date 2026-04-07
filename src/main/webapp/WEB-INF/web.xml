@@ -19,7 +19,7 @@
     <!-- basic servlet mapping for login so /login always works -->
     <servlet>
         <servlet-name>loginServlet</servlet-name>
-        <servlet-class>com.skarm.sjsucs157aproject.LoginServlet</servlet-class>
+        <servlet-class>com.skarm.sjsucs157aproject.servlet.LoginServlet</servlet-class>
     </servlet>
 
     <servlet-mapping>
