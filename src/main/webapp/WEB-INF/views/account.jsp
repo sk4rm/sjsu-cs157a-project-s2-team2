@@ -150,14 +150,14 @@
     <div class="error"><%= error %></div>
     <% } %>
     <form method="post" action="<%= request.getContextPath() %>/account">
-        <label for="email">Email</label>
-        <input class="readonly" type="email" id="email" name="email" value="<%= user != null ? user.getEmail() : "" %>" readonly>
+        <label for="username">Username</label>
+        <input class="readonly" type="text" id="username" name="username" value="<%= user != null ? user.getUsername() : "" %>" readonly>
 
         <label for="displayName">Display name</label>
         <input type="text" id="displayName" name="displayName" maxlength="64" value="<%= user != null ? user.getDisplayName() : "" %>" required>
 
-        <label for="heightMeters">Height (meters)</label>
-        <input type="number" step="0.01" min="0.5" max="2.5" id="heightMeters" name="heightMeters" value="<%= user != null ? user.getHeightMeters() : 1.75 %>" required>
+        <label for="heightMeter">Height (meters)</label>
+        <input type="number" step="0.01" min="0.5" max="2.5" id="heightMeter" name="heightMeter" value="<%= user != null ? user.getHeightMeter() : 1.75 %>" required>
 
         <button type="submit">Save changes</button>
     </form>

@@ -24,13 +24,13 @@ public class RegisterServlet extends HttpServlet {
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         String displayName = req.getParameter("displayName");
-        String email = req.getParameter("email");
+        String username = req.getParameter("username");
         String password = req.getParameter("password");
         String confirmPassword = req.getParameter("confirmPassword");
-        String heightStr = req.getParameter("heightMeters");
+        String heightStr = req.getParameter("heightMeter");
 
         if (displayName == null || displayName.isBlank()
-                || email == null || email.isBlank()
+                || username == null || username.isBlank()
                 || password == null || password.isBlank()
                 || confirmPassword == null || confirmPassword.isBlank()
                 || heightStr == null || heightStr.isBlank()) {
@@ -61,15 +61,15 @@ public class RegisterServlet extends HttpServlet {
         }
 
         try {
-            if (userDao.findByEmail(email) != null) {
+            if (userDao.findByUsername(username) != null) {
                 HttpSession session = req.getSession();
-                session.setAttribute("registerError", "An account with that email already exists.");
+                session.setAttribute("registerError", "An account with that username already exists.");
                 resp.sendRedirect(req.getContextPath() + "/#join");
                 return;
             }
 
             String passwordHash = PasswordUtil.hashPassword(password);
-            long userId = userDao.createUser(displayName, email, passwordHash, heightMeters, "USER");
+            long userId = userDao.createUser(displayName, username, passwordHash, heightMeters);
 
             if (userId <= 0) {
                 HttpSession session = req.getSession();

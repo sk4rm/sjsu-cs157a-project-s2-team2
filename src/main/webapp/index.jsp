@@ -456,7 +456,6 @@
 <%
     Long userId = (Long) session.getAttribute("userId");
     String userDisplayName = (String) session.getAttribute("userDisplayName");
-    String userRole = (String) session.getAttribute("userRole");
 %>
 <header>
     <div class="logo">W<span>ARP</span> Studio</div>
@@ -468,7 +467,7 @@
         <a href="<%= request.getContextPath() %>/login">Log in</a>
         <a href="javascript:void(0)" class="primary-btn" onclick="scrollToTarget('join')">Get started</a>
         <% } else { %>
-        <span class="pill">Signed in as <strong><%= userDisplayName %></strong><% if (userRole != null) { %> · <%= userRole %><% } %></span>
+        <span class="pill">Signed in as <strong><%= userDisplayName %></strong></span>
         <a href="<%= request.getContextPath() %>/account">Account</a>
         <form style="display:inline;margin-left:8px;" method="post" action="<%= request.getContextPath() %>/logout">
             <button type="submit" class="ghost-btn">Sign out</button>
@@ -665,7 +664,7 @@
                     <li>Save favorites and see what friends and clubs leave nearby.</li>
                 </ul>
                 <p class="signup-hint">
-                    Use a real email so you can log back in. Height helps WARP scale scenes to your perspective.
+                    Use a username so you can log back in. Height helps WARP scale scenes to your perspective.
                 </p>
             </div>
 
@@ -683,8 +682,8 @@
                     <label for="displayNameLanding">Display name</label>
                     <input type="text" id="displayNameLanding" name="displayName" maxlength="64" required>
 
-                    <label for="emailLanding">Email</label>
-                    <input type="email" id="emailLanding" name="email" maxlength="256" required>
+                    <label for="usernameLanding">Username</label>
+                    <input type="text" id="usernameLanding" name="username" maxlength="45" required>
 
                     <label for="passwordLanding">Password</label>
                     <input type="password" id="passwordLanding" name="password" minlength="8" required>
@@ -692,8 +691,8 @@
                     <label for="confirmPasswordLanding">Confirm password</label>
                     <input type="password" id="confirmPasswordLanding" name="confirmPassword" minlength="8" required>
 
-                    <label for="heightMetersLanding">Height (meters)</label>
-                    <input type="number" step="0.01" min="0.5" max="2.5" id="heightMetersLanding" name="heightMeters" required>
+                    <label for="heightMeterLanding">Height (meters)</label>
+                    <input type="number" step="0.01" min="0.5" max="2.5" id="heightMeterLanding" name="heightMeter" required>
 
         <button type="submit" class="primary-btn signup-button-full">Create a free account</button>
     </form>

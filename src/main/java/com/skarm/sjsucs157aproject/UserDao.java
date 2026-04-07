@@ -5,11 +5,11 @@ import java.sql.*;
 // Simple DAO for user database operations
 public class UserDao {
 
-    public User findByEmail(String email) throws SQLException {
-        String sql = "SELECT user_id, display_name, email, password_hash, height_meters, role FROM UserAccounts WHERE email = ?";
+    public User findByUsername(String username) throws SQLException {
+        String sql = "SELECT id, display_name, username, password_hash, height_meter FROM user_accounts WHERE username = ?";
         try (Connection conn = DbUtil.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
-            ps.setString(1, email);
+            ps.setString(1, username);
             try (ResultSet rs = ps.executeQuery()) {
                 if (rs.next()) {
                     return mapRow(rs);
@@ -20,7 +20,7 @@ public class UserDao {
     }
 
     public User findById(long userId) throws SQLException {
-        String sql = "SELECT user_id, display_name, email, password_hash, height_meters, role FROM UserAccounts WHERE user_id = ?";
+        String sql = "SELECT id, display_name, username, password_hash, height_meter FROM user_accounts WHERE id = ?";
         try (Connection conn = DbUtil.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, userId);
@@ -33,15 +33,14 @@ public class UserDao {
         }
     }
 
-    public long createUser(String displayName, String email, String passwordHash, double heightMeters, String role) throws SQLException {
-        String sql = "INSERT INTO UserAccounts (display_name, email, password_hash, height_meters, role) VALUES (?,?,?,?,?)";
+    public long createUser(String displayName, String username, String passwordHash, double heightMeter) throws SQLException {
+        String sql = "INSERT INTO user_accounts (display_name, username, password_hash, height_meter) VALUES (?,?,?,?)";
         try (Connection conn = DbUtil.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setString(1, displayName);
-            ps.setString(2, email);
+            ps.setString(2, username);
             ps.setString(3, passwordHash);
-            ps.setDouble(4, heightMeters);
-            ps.setString(5, role);
+            ps.setDouble(4, heightMeter);
             ps.executeUpdate();
 
             try (ResultSet rs = ps.getGeneratedKeys()) {
@@ -53,12 +52,12 @@ public class UserDao {
         return -1;
     }
 
-    public void updateProfile(long userId, String displayName, double heightMeters) throws SQLException {
-        String sql = "UPDATE UserAccounts SET display_name = ?, height_meters = ? WHERE user_id = ?";
+    public void updateProfile(long userId, String displayName, double heightMeter) throws SQLException {
+        String sql = "UPDATE user_accounts SET display_name = ?, height_meter = ? WHERE id = ?";
         try (Connection conn = DbUtil.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setString(1, displayName);
-            ps.setDouble(2, heightMeters);
+            ps.setDouble(2, heightMeter);
             ps.setLong(3, userId);
             ps.executeUpdate();
         }
@@ -66,12 +65,11 @@ public class UserDao {
 
     private User mapRow(ResultSet rs) throws SQLException {
         User user = new User();
-        user.setUserId(rs.getLong("user_id"));
+        user.setUserId(rs.getLong("id"));
         user.setDisplayName(rs.getString("display_name"));
-        user.setEmail(rs.getString("email"));
+        user.setUsername(rs.getString("username"));
         user.setPasswordHash(rs.getString("password_hash"));
-        user.setHeightMeters(rs.getDouble("height_meters"));
-        user.setRole(rs.getString("role"));
+        user.setHeightMeter(rs.getDouble("height_meter"));
         return user;
     }
 }

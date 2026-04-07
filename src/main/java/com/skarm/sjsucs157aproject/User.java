@@ -3,10 +3,9 @@ package com.skarm.sjsucs157aproject;
 public class User {
     private long userId;
     private String displayName;
-    private String email;
+    private String username;
     private String passwordHash;
-    private double heightMeters;
-    private String role; // e.g. GUEST, USER, MODERATOR
+    private double heightMeter;
 
     public long getUserId() {
         return userId;
@@ -24,12 +23,12 @@ public class User {
         this.displayName = displayName;
     }
 
-    public String getEmail() {
-        return email;
+    public String getUsername() {
+        return username;
     }
 
-    public void setEmail(String email) {
-        this.email = email;
+    public void setUsername(String username) {
+        this.username = username;
     }
 
     public String getPasswordHash() {
@@ -40,20 +39,14 @@ public class User {
         this.passwordHash = passwordHash;
     }
 
-    public double getHeightMeters() {
-        return heightMeters;
+    public double getHeightMeter() {
+        return heightMeter;
     }
 
-    public void setHeightMeters(double heightMeters) {
-        this.heightMeters = heightMeters;
+    public void setHeightMeter(double heightMeter) {
+        this.heightMeter = heightMeter;
     }
 
-    public String getRole() {
-        return role;
-    }
 
-    public void setRole(String role) {
-        this.role = role;
-    }
 }
 

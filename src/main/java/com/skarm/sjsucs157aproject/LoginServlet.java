@@ -22,19 +22,19 @@ public class LoginServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        String email = req.getParameter("email");
+        String username = req.getParameter("username");
         String password = req.getParameter("password");
 
-        if (email == null || email.isBlank() || password == null || password.isBlank()) {
-            req.setAttribute("error", "Email and password are required.");
+        if (username == null || username.isBlank() || password == null || password.isBlank()) {
+            req.setAttribute("error", "Username and password are required.");
             req.getRequestDispatcher("/WEB-INF/views/login.jsp").forward(req, resp);
             return;
         }
 
         try {
-            User user = userDao.findByEmail(email);
+            User user = userDao.findByUsername(username);
             if (user == null) {
-                req.setAttribute("error", "Invalid email or password.");
+                req.setAttribute("error", "Invalid username or password.");
                 req.getRequestDispatcher("/WEB-INF/views/login.jsp").forward(req, resp);
                 return;
             }
@@ -43,16 +43,15 @@ public class LoginServlet extends HttpServlet {
             String providedHash = PasswordUtil.hashPassword(password);
 
             if (!expectedHash.equals(providedHash)) {
-                req.setAttribute("error", "Invalid email or password.");
+                req.setAttribute("error", "Invalid username or password.");
                 req.getRequestDispatcher("/WEB-INF/views/login.jsp").forward(req, resp);
                 return;
             }
 
             HttpSession session = req.getSession(true);
             session.setAttribute("userId", user.getUserId());
-            session.setAttribute("userEmail", user.getEmail());
+            session.setAttribute("userUsername", user.getUsername());
             session.setAttribute("userDisplayName", user.getDisplayName());
-            session.setAttribute("userRole", user.getRole());
 
             resp.sendRedirect(req.getContextPath() + "/");
         } catch (SQLException e) {

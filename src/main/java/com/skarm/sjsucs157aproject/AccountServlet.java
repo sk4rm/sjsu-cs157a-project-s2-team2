@@ -47,7 +47,7 @@ public class AccountServlet extends HttpServlet {
         }
 
         String displayName = req.getParameter("displayName");
-        String heightStr = req.getParameter("heightMeters");
+        String heightStr = req.getParameter("heightMeter");
 
         if (displayName == null || displayName.isBlank() || heightStr == null || heightStr.isBlank()) {
             req.setAttribute("error", "Display name and height are required.");
@@ -55,10 +55,10 @@ public class AccountServlet extends HttpServlet {
             return;
         }
 
-        double heightMeters;
+        double heightMeter;
         try {
-            heightMeters = Double.parseDouble(heightStr);
-            if (heightMeters <= 0 || heightMeters > 3) {
+            heightMeter = Double.parseDouble(heightStr);
+            if (heightMeter <= 0 || heightMeter > 3) {
                 throw new NumberFormatException("Height out of range");
             }
         } catch (NumberFormatException e) {
@@ -69,7 +69,7 @@ public class AccountServlet extends HttpServlet {
 
         long userId = (Long) session.getAttribute("userId");
         try {
-            userDao.updateProfile(userId, displayName, heightMeters);
+            userDao.updateProfile(userId, displayName, heightMeter);
             session.setAttribute("userDisplayName", displayName);
             resp.sendRedirect(req.getContextPath() + "/account?updated=1");
         } catch (SQLException e) {
