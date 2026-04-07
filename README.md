@@ -1,5 +1,10 @@
 # CS 157A Project | S2 Team 2
 
+## Introduction
+
+Web Augmented Reality Platform (WARP) is a AR-first social platform where users can collaboratively manipulate a shared
+virtual environment using persistent virtual "props".
+
 ## Development
 
 ### Prerequisites
