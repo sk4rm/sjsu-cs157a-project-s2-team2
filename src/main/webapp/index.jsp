@@ -479,13 +479,14 @@
 <div class="page-shell">
     <!-- Tall, airy hero -->
     <section class="hero-shell">
+        <% if (userId == null) { %>
         <div>
-        <div class="hero-eyebrow"><span class="hero-dot"></span> CS 157A · Social AR Platform</div>
+            <div class="hero-eyebrow"><span class="hero-dot"></span> CS 157A · Social AR Platform</div>
             <h1>Create <span class="hero-highlight">interactive environments</span> with the people around you.</h1>
-        <p class="hero-sub">
+            <p class="hero-sub">
                 WARP lets you pin moments to the places you already hang out: study spots, club corners, campus paths, and pop-ups that only unlock when you’re there.
-        </p>
-        <div class="hero-actions">
+            </p>
+            <div class="hero-actions">
                 <button type="button" class="primary-btn" onclick="scrollToTarget('how')">
                     Start scrolling the world
                 </button>
@@ -495,6 +496,26 @@
             </div>
             <p class="tagline">No app store download, no headsets. Just your browser and the spaces you already move through.</p>
         </div>
+        <% } else { %>
+        <div>
+            <div class="hero-eyebrow"><span class="hero-dot"></span> Welcome to the World</div>
+            <h1>Ready to <span class="hero-highlight">drop</span> objects nearby?</h1>
+            <p class="hero-sub">
+                Open your camera to see what friends and clubs have left around you, or place your own signposts and 3D moments.
+            </p>
+            <div class="hero-actions">
+                <form method="get" action="<%= request.getContextPath() %>/world" style="margin:0;">
+                    <button type="submit" class="primary-btn">
+                        Enter WARP Camera
+                    </button>
+                </form>
+                <button type="button" class="ghost-btn" onclick="scrollToTarget('how')">
+                    View features ↓
+                </button>
+            </div>
+            <p class="tagline">Browser will request your camera and location permissions.</p>
+        </div>
+        <% } %>
 
     <aside>
         <div class="scene-card">
