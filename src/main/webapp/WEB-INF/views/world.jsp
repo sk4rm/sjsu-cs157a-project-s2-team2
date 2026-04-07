@@ -306,7 +306,7 @@
                 const result = await response.json();
                 console.log("Object dropped!", result);
                 showMessage("Object dropped successfully!");
-                loadObjects(); // Refresh the scene
+                await loadObjects(); // Refresh the scene
             } else {
                 const err = await response.json();
                 showMessage("Failed to drop object: " + (err.error || response.statusText), true);
