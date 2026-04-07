@@ -24,5 +24,7 @@ running the project.
 6. Click OK and leave everything in the _Run/Debug Configurations_ default as well.
 7. Click "Fix" on the error below if you see it, or head to _Deployment_ tab.
 8. Add an _artifact..._ with the plus button and select the "war exploded" option.
-9. Hit OK to finalize everything.
-10. You can now host the project by running this configuration.
+9. Head to the _Startup/Connection_ tab to add `DB_USER` and `DB_PASSWORD` environmental variables. These are the
+   credentials needed to access your MySQL server.
+10. Hit OK to finalize everything.
+11. You can now host the project by running this configuration.
