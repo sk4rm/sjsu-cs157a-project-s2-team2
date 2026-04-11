@@ -5,6 +5,11 @@
 <head>
     <title>WARP - Camera View</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
+    <% if ("1".equals(request.getParameter("debug"))) { %>
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+    <% } %>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
     <style>
@@ -14,10 +19,41 @@
             padding: 0;
             width: 100%;
             height: 100%;
-            background-color: transparent !important;
+            background-color: #000;
             overflow: hidden;
             font-family: system-ui, -apple-system, sans-serif;
             color: white;
+        }
+
+        /* Pin AR.js's generated webcam <video> to the full viewport and crop
+           (cover) instead of stretch. Broad selector because AR.js does not
+           always assign a stable id to the video element. */
+        video {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            min-width: 100vw !important;
+            min-height: 100vh !important;
+            max-width: none !important;
+            max-height: none !important;
+            margin: 0 !important;
+            object-fit: cover !important;
+            z-index: 0 !important;
+        }
+
+        /* A-Frame's WebGL canvas sits above the video; force it to fill the
+           viewport transparently so 3D entities align with the cropped feed. */
+        .a-canvas,
+        a-scene canvas {
+            position: fixed !important;
+            top: 0 !important;
+            left: 0 !important;
+            width: 100vw !important;
+            height: 100vh !important;
+            background: transparent !important;
+            z-index: 1 !important;
         }
 
         .hud-top {
@@ -122,7 +158,7 @@
 </div>
 
 <a-scene vr-mode-ui="enabled: false" embedded
-         arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; antialias: true; alpha: true"
+         arjs="sourceType: webcam; debugUIEnabled: false; antialias: true; alpha: true"
          renderer="antialias: true; alpha: true">
 
     <a-camera gps-camera rotation-reader></a-camera>
@@ -192,6 +228,12 @@
 
         window.addEventListener('gps-camera-origin-coord-set', () => {
             console.log("WARP: AR.js GPS origin acquired.");
+        });
+
+        // iOS fires orientationchange before applying the new viewport size,
+        // so nudge A-Frame after a short delay to re-measure.
+        window.addEventListener('orientationchange', () => {
+            setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
         });
 
         loadObjects();
