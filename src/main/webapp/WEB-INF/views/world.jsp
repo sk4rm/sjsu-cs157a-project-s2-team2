@@ -34,13 +34,9 @@
             left: 0 !important;
             width: 100vw !important;
             height: 100vh !important;
-            min-width: 100vw !important;
-            min-height: 100vh !important;
-            max-width: none !important;
-            max-height: none !important;
             margin: 0 !important;
-            object-fit: cover !important;
             z-index: 0 !important;
+            object-fit: cover;
         }
 
         /* A-Frame's WebGL canvas sits above the video; force it to fill the
