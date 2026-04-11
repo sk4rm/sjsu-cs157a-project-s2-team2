@@ -2,6 +2,7 @@ package com.skarm.sjsucs157aproject.servlet;
 
 import com.skarm.sjsucs157aproject.dao.UserDao;
 import com.skarm.sjsucs157aproject.model.User;
+import com.skarm.sjsucs157aproject.util.PasswordUtil;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
@@ -48,6 +49,11 @@ public class AccountServlet extends HttpServlet {
             return;
         }
 
+        if ("delete".equals(req.getParameter("action"))) {
+            handleDelete(req, resp, session);
+            return;
+        }
+
         String displayName = req.getParameter("displayName");
         String heightStr = req.getParameter("heightMeter");
 
@@ -76,6 +82,42 @@ public class AccountServlet extends HttpServlet {
             resp.sendRedirect(req.getContextPath() + "/account?updated=1");
         } catch (SQLException e) {
             throw new ServletException("Database error updating account", e);
+        }
+    }
+
+    private void handleDelete(HttpServletRequest req, HttpServletResponse resp, HttpSession session) throws ServletException, IOException {
+        String password = req.getParameter("deletePassword");
+        String confirmation = req.getParameter("deleteConfirmation");
+
+        if (password == null || password.isBlank()) {
+            req.setAttribute("deleteError", "Password is required to delete your account.");
+            doGet(req, resp);
+            return;
+        }
+        if (!"DELETE".equals(confirmation)) {
+            req.setAttribute("deleteError", "Type DELETE exactly to confirm.");
+            doGet(req, resp);
+            return;
+        }
+
+        long userId = (Long) session.getAttribute("userId");
+        try {
+            User user = userDao.findById(userId);
+            if (user == null) {
+                session.invalidate();
+                resp.sendRedirect(req.getContextPath() + "/login");
+                return;
+            }
+            if (!PasswordUtil.verifyPassword(user.getPasswordHash(), password)) {
+                req.setAttribute("deleteError", "Incorrect password.");
+                doGet(req, resp);
+                return;
+            }
+            userDao.deleteById(userId);
+            session.invalidate();
+            resp.sendRedirect(req.getContextPath() + "/?deleted=1");
+        } catch (SQLException e) {
+            throw new ServletException("Database error deleting account", e);
         }
     }
 }

@@ -62,6 +62,49 @@ public class UserDao {
         }
     }
 
+    // Fully deletes a user and everything that references them. None of the
+    // child tables declare ON DELETE CASCADE, so we clear each FK manually
+    // inside a single transaction. Order: first the user's owned virtual
+    // objects (and their children), then the user's activity on other users'
+    // content, then the user row itself.
+    public void deleteById(long userId) throws SQLException {
+        String[] statements = {
+                "DELETE FROM virtual_props WHERE object_id IN (SELECT id FROM virtual_objects WHERE user_id = ?)",
+                "DELETE FROM virtual_signposts WHERE object_id IN (SELECT id FROM virtual_objects WHERE user_id = ?)",
+                "DELETE FROM includes WHERE object_id IN (SELECT id FROM virtual_objects WHERE user_id = ?)",
+                "DELETE FROM comments WHERE object_id IN (SELECT id FROM virtual_objects WHERE user_id = ?)",
+                "DELETE FROM votes WHERE object_id IN (SELECT id FROM virtual_objects WHERE user_id = ?)",
+                "DELETE FROM virtual_objects WHERE user_id = ?",
+                "DELETE FROM votes WHERE voter_id = ?",
+                "DELETE FROM comments WHERE commenter_id = ?",
+                "DELETE FROM object_placements WHERE user_id = ?",
+                "DELETE FROM befriends WHERE user_id_1 = ? OR user_id_2 = ?",
+                "DELETE FROM user_accounts WHERE id = ?"
+        };
+
+        try (Connection conn = DbUtil.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                for (String sql : statements) {
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        ps.setLong(1, userId);
+                        // The befriends statement is the only one with two params.
+                        if (sql.contains("user_id_2")) {
+                            ps.setLong(2, userId);
+                        }
+                        ps.executeUpdate();
+                    }
+                }
+                conn.commit();
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        }
+    }
+
     private User mapRow(ResultSet rs) throws SQLException {
         User user = new User();
         user.setUserId(rs.getLong("id"));

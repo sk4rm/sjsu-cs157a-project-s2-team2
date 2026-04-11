@@ -147,6 +147,29 @@
             padding: 6px 14px;
             font-size: 0.8rem;
         }
+
+        .danger-zone h2 {
+            margin: 0 0 8px;
+            font-size: 1rem;
+            color: #a1354b;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .danger-zone p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin: 4px 0 12px;
+        }
+
+        .danger-zone button {
+            background: linear-gradient(135deg, #a1354b, #d37f8f);
+            box-shadow: 0 8px 18px rgba(161, 53, 75, 0.4);
+        }
+
+        .danger-zone button:hover {
+            box-shadow: 0 10px 22px rgba(161, 53, 75, 0.55);
+        }
     </style>
 </head>
 <body>
@@ -194,10 +217,29 @@
     </form>
 
     <div class="danger-zone">
-        <strong>Danger zone</strong>
-        <p>Request account deletion (requires re-entering your password). This flow will be implemented in a dedicated
-            page.</p>
-        <!-- todo: add real account delete flow later -->
+        <h2>Danger zone</h2>
+        <p>Permanently delete your account and every virtual object, vote, comment, and friendship attached to it. This
+            cannot be undone.</p>
+        <%
+            String deleteError = (String) request.getAttribute("deleteError");
+            if (deleteError != null) {
+        %>
+        <div class="error"><%= deleteError %>
+        </div>
+        <% } %>
+        <form method="post" action="<%= request.getContextPath() %>/account"
+              onsubmit="return confirm('Delete your account permanently? This cannot be undone.');">
+            <input type="hidden" name="action" value="delete">
+
+            <label for="deletePassword">Confirm password</label>
+            <input type="password" id="deletePassword" name="deletePassword" autocomplete="current-password" required>
+
+            <label for="deleteConfirmation">Type DELETE to confirm</label>
+            <input type="text" id="deleteConfirmation" name="deleteConfirmation" pattern="DELETE"
+                   autocomplete="off" required>
+
+            <button type="submit">Delete my account</button>
+        </form>
     </div>
 </div>
 </body>
