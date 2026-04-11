@@ -6,7 +6,7 @@
     <title>WARP - Camera View</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <script src="https://raw.githack.com/AR-js-org/AR.js/master/aframe/build/aframe-ar.js"></script>
+    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
     <style>
         body,
         html {
@@ -154,25 +154,42 @@
             return;
         }
 
-        loadingSub.innerText = "Waiting for GPS lock...";
+        loadingSub.innerText = "Starting camera...";
 
-        // Rely exclusively on AR.js's GPS tracker to avoid hardware conflicts
-        window.addEventListener('gps-camera-update-position', e => {
-            if (!currentPosition) {
+        // Hide the loading overlay as soon as the camera video is live, so the
+        // user sees the feed without waiting on a GPS lock (iPhone lock times
+        // are unreliable, especially indoors).
+        document.addEventListener('arjs-video-loaded', () => {
+            console.log("WARP: AR.js video loaded.");
+            hideLoading();
+        });
+        const scene = document.querySelector('a-scene');
+        if (scene) {
+            scene.addEventListener('loaded', () => {
+                console.log("WARP: A-Frame scene loaded.");
+                hideLoading();
+            });
+        }
+        // Safety net: force-hide after 8s even if neither event fires, so the
+        // user never stares at a permanent black screen.
+        setTimeout(() => {
+            if (document.getElementById('loading')) {
+                console.warn("WARP: loading overlay force-hidden after timeout.");
                 hideLoading();
             }
+        }, 8000);
 
+        // GPS status is now purely informational — it updates the HUD but does
+        // not gate the camera feed.
+        window.addEventListener('gps-camera-update-position', e => {
             currentPosition = {
                 latitude: e.detail.position.latitude,
                 longitude: e.detail.position.longitude
             };
-
-            // (Includes the JSP string concatenation fix from earlier)
             document.getElementById('status-location').innerHTML =
                 '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
         });
 
-        // Optional: Catch AR.js initialization errors
         window.addEventListener('gps-camera-origin-coord-set', () => {
             console.log("WARP: AR.js GPS origin acquired.");
         });
@@ -293,7 +310,7 @@
         const formData = new URLSearchParams();
         formData.append('latitude', currentPosition.latitude);
         formData.append('longitude', currentPosition.longitude);
-        formData.append('type', 'box');
+        formData.append('type', 'prop');
 
         try {
             const response = await fetch(API_URL, {
