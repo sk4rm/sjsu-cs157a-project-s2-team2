@@ -52,6 +52,11 @@
             <artifactId>parsson</artifactId>
             <version>1.1.7</version>
         </dependency>
+        <dependency>
+            <groupId>de.mkammerer</groupId>
+            <artifactId>argon2-jvm</artifactId>
+            <version>2.11</version>
+        </dependency>
     </dependencies>
 
     <build>

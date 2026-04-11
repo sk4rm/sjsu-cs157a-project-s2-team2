@@ -1,23 +1,32 @@
 package com.skarm.sjsucs157aproject.util;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import de.mkammerer.argon2.Argon2;
+import de.mkammerer.argon2.Argon2Factory;
 
-// Simple password hashing using SHA-256
 public class PasswordUtil {
 
+    // OWASP minimum recommended Argon2id parameters
+    private static final int ITERATIONS = 2;
+    private static final int MEMORY_KIB = 19456;
+    private static final int PARALLELISM = 1;
+
+    private static final Argon2 ARGON2 = Argon2Factory.create(Argon2Factory.Argon2Types.ARGON2id);
+
     public static String hashPassword(String password) {
+        char[] chars = password.toCharArray();
         try {
-            MessageDigest digest = MessageDigest.getInstance("SHA-256");
-            byte[] hashBytes = digest.digest(password.getBytes(StandardCharsets.UTF_8));
-            StringBuilder sb = new StringBuilder();
-            for (byte b : hashBytes) {
-                sb.append(String.format("%02x", b));
-            }
-            return sb.toString();
-        } catch (NoSuchAlgorithmException e) {
-            throw new RuntimeException("SHA-256 not available", e);
+            return ARGON2.hash(ITERATIONS, MEMORY_KIB, PARALLELISM, chars);
+        } finally {
+            ARGON2.wipeArray(chars);
+        }
+    }
+
+    public static boolean verifyPassword(String hash, String password) {
+        char[] chars = password.toCharArray();
+        try {
+            return ARGON2.verify(hash, chars);
+        } finally {
+            ARGON2.wipeArray(chars);
         }
     }
 }

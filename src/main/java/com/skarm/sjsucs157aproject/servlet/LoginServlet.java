@@ -42,10 +42,7 @@ public class LoginServlet extends HttpServlet {
                 return;
             }
 
-            String expectedHash = user.getPasswordHash();
-            String providedHash = PasswordUtil.hashPassword(password);
-
-            if (!expectedHash.equals(providedHash)) {
+            if (!PasswordUtil.verifyPassword(user.getPasswordHash(), password)) {
                 req.setAttribute("error", "Invalid username or password.");
                 req.getRequestDispatcher("/WEB-INF/views/login.jsp").forward(req, resp);
                 return;
