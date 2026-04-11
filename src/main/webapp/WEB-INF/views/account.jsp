@@ -1,5 +1,5 @@
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
-<%@ page import="com.skarm.sjsucs157aproject.User" %>
+<%@ page import="com.skarm.sjsucs157aproject.model.User" %>
 <!DOCTYPE html>
 <html>
 <head>

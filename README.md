@@ -55,3 +55,7 @@ re-allow all your camera and GPS.
 #### Camera feed is stretched
 
 To be fixed in the future.
+
+### TODO
+
+- Hide ugly server errors with a custom page
