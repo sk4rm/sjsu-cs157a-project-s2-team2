@@ -93,7 +93,7 @@ public class ObjectApiServlet extends HttpServlet {
                 signpost.setLatitude(lat);
                 signpost.setLongitude(lng);
                 signpost.setContent(req.getParameter("content") != null ? req.getParameter("content") : "Default Signpost");
-                objectDao.createSignpost(signpost);
+                objectDao.create(signpost);
                 resp.setStatus(HttpServletResponse.SC_CREATED);
                 resp.getWriter().write(toJson(signpost).build().toString());
             } else {
@@ -102,7 +102,7 @@ public class ObjectApiServlet extends HttpServlet {
                 prop.setLatitude(lat);
                 prop.setLongitude(lng);
                 prop.setFileHash(req.getParameter("fileHash") != null ? req.getParameter("fileHash") : "default_box_hash");
-                objectDao.createProp(prop);
+                objectDao.create(prop);
                 resp.setStatus(HttpServletResponse.SC_CREATED);
                 resp.getWriter().write(toJson(prop).build().toString());
             }

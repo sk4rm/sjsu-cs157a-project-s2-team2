@@ -41,37 +41,25 @@ public class VirtualObjectDao {
         return objects;
     }
 
-    public void createProp(VirtualProp prop) throws SQLException {
+    public void create(VirtualObject obj) throws SQLException {
         try (Connection conn = DbUtil.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                long objectId = createBaseObject(conn, prop);
-                String sql = "INSERT INTO virtual_props (object_id, file_hash) VALUES (?, ?)";
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                    ps.setLong(1, objectId);
-                    ps.setString(2, prop.getFileHash());
-                    ps.executeUpdate();
-                }
-                conn.commit();
-            } catch (SQLException e) {
-                conn.rollback();
-                throw e;
-            } finally {
-                conn.setAutoCommit(true);
-            }
-        }
-    }
-
-    public void createSignpost(VirtualSignpost signpost) throws SQLException {
-        try (Connection conn = DbUtil.getConnection()) {
-            conn.setAutoCommit(false);
-            try {
-                long objectId = createBaseObject(conn, signpost);
-                String sql = "INSERT INTO virtual_signposts (object_id, content) VALUES (?, ?)";
-                try (PreparedStatement ps = conn.prepareStatement(sql)) {
-                    ps.setLong(1, objectId);
-                    ps.setString(2, signpost.getContent());
-                    ps.executeUpdate();
+                long objectId = createBaseObject(conn, obj);
+                if (obj instanceof VirtualProp prop) {
+                    try (PreparedStatement ps = conn.prepareStatement("INSERT INTO virtual_props (object_id, file_hash) VALUES (?, ?)")) {
+                        ps.setLong(1, objectId);
+                        ps.setString(2, prop.getFileHash());
+                        ps.executeUpdate();
+                    }
+                } else if (obj instanceof VirtualSignpost signpost) {
+                    try (PreparedStatement ps = conn.prepareStatement("INSERT INTO virtual_signposts (object_id, content) VALUES (?, ?)")) {
+                        ps.setLong(1, objectId);
+                        ps.setString(2, signpost.getContent());
+                        ps.executeUpdate();
+                    }
+                } else {
+                    throw new SQLException("Cannot create bare VirtualObject; must be a VirtualProp or VirtualSignpost");
                 }
                 conn.commit();
             } catch (SQLException e) {
