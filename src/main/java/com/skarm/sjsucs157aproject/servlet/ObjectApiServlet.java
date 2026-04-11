@@ -18,53 +18,69 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
 
-@WebServlet(name = "objectApiServlet", value = "/api/objects")
+@WebServlet(name = "objectApiServlet", urlPatterns = {"/api/objects", "/api/objects/*"})
 public class ObjectApiServlet extends HttpServlet {
 
     private final VirtualObjectDao objectDao = new VirtualObjectDao();
 
+    // HttpServlet predates RFC 5789, so PATCH is not dispatched by the base
+    // service() method. Intercept it here and delegate everything else upward.
+    @Override
+    protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        if ("PATCH".equalsIgnoreCase(req.getMethod())) {
+            doPatch(req, resp);
+        } else {
+            super.service(req, resp);
+        }
+    }
+
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        Long userId = requireAuth(req, resp);
+        if (userId == null) return;
         resp.setContentType("application/json");
-        try {
-            List<VirtualObject> objects = objectDao.findAll();
-            JsonArrayBuilder arrayBuilder = Json.createArrayBuilder();
-            for (VirtualObject obj : objects) {
-                JsonObjectBuilder objBuilder = Json.createObjectBuilder().add("id", obj.getId()).add("userId", obj.getUserId()).add("latitude", obj.getLatitude()).add("longitude", obj.getLongitude()).add("rotation", obj.getRotation()).add("scale", obj.getScale());
 
-                if (obj instanceof VirtualProp) {
-                    objBuilder.add("type", "prop").add("fileHash", ((VirtualProp) obj).getFileHash());
-                } else if (obj instanceof VirtualSignpost) {
-                    objBuilder.add("type", "signpost").add("content", ((VirtualSignpost) obj).getContent());
+        try {
+            Long id = parseIdFromPath(req);
+            if (id == null) {
+                List<VirtualObject> objects = objectDao.findAll();
+                JsonArrayBuilder arrayBuilder = Json.createArrayBuilder();
+                for (VirtualObject obj : objects) {
+                    arrayBuilder.add(toJson(obj));
                 }
-                arrayBuilder.add(objBuilder);
+                resp.getWriter().write(arrayBuilder.build().toString());
+            } else {
+                VirtualObject obj = objectDao.findById(id);
+                if (obj == null) {
+                    sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Object not found");
+                    return;
+                }
+                resp.getWriter().write(toJson(obj).build().toString());
             }
-            resp.getWriter().write(arrayBuilder.build().toString());
         } catch (SQLException e) {
-            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            resp.getWriter().write("{\"error\": \"Database error: " + e.getMessage() + "\"}");
+            getServletContext().log("GET /api/objects failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
         }
     }
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        HttpSession session = req.getSession(false);
-        if (session == null || session.getAttribute("userId") == null) {
-            resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+        Long userId = requireAuth(req, resp);
+        if (userId == null) return;
+
+        if (req.getPathInfo() != null && !"/".equals(req.getPathInfo())) {
+            resp.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return;
         }
-
-        long userId = (long) session.getAttribute("userId");
         resp.setContentType("application/json");
 
         try {
             String latParam = req.getParameter("latitude");
             String lngParam = req.getParameter("longitude");
-            String typeParam = req.getParameter("type"); // "prop" or "signpost"
+            String typeParam = req.getParameter("type");
 
             if (latParam == null || lngParam == null) {
-                resp.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-                resp.getWriter().write("{\"error\": \"Missing latitude or longitude\"}");
+                sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing latitude or longitude");
                 return;
             }
 
@@ -78,21 +94,144 @@ public class ObjectApiServlet extends HttpServlet {
                 signpost.setLongitude(lng);
                 signpost.setContent(req.getParameter("content") != null ? req.getParameter("content") : "Default Signpost");
                 objectDao.createSignpost(signpost);
-                resp.getWriter().write(Json.createObjectBuilder().add("status", "success").add("id", signpost.getId()).build().toString());
+                resp.setStatus(HttpServletResponse.SC_CREATED);
+                resp.getWriter().write(toJson(signpost).build().toString());
             } else {
-                // Default to Prop
                 VirtualProp prop = new VirtualProp();
                 prop.setUserId(userId);
                 prop.setLatitude(lat);
                 prop.setLongitude(lng);
                 prop.setFileHash(req.getParameter("fileHash") != null ? req.getParameter("fileHash") : "default_box_hash");
                 objectDao.createProp(prop);
-                resp.getWriter().write(Json.createObjectBuilder().add("status", "success").add("id", prop.getId()).build().toString());
+                resp.setStatus(HttpServletResponse.SC_CREATED);
+                resp.getWriter().write(toJson(prop).build().toString());
+            }
+        } catch (NumberFormatException e) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Invalid latitude or longitude");
+        } catch (SQLException e) {
+            getServletContext().log("POST /api/objects failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+        }
+    }
+
+    protected void doPatch(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        Long userId = requireAuth(req, resp);
+        if (userId == null) return;
+        resp.setContentType("application/json");
+
+        Long id = parseIdFromPath(req);
+        if (id == null) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing object id");
+            return;
+        }
+
+        try {
+            VirtualObject obj = objectDao.findById(id);
+            if (obj == null) {
+                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Object not found");
+                return;
+            }
+            if (obj.getUserId() != userId) {
+                sendError(resp, HttpServletResponse.SC_FORBIDDEN, "Not your object");
+                return;
             }
 
-        } catch (Exception e) {
-            resp.setStatus(HttpServletResponse.SC_INTERNAL_SERVER_ERROR);
-            resp.getWriter().write("{\"error\": \"" + e.getMessage() + "\"}");
+            String rotation = req.getParameter("rotation");
+            String scaleStr = req.getParameter("scale");
+            String fileHash = req.getParameter("fileHash");
+            String content = req.getParameter("content");
+
+            if (rotation != null) obj.setRotation(rotation);
+            if (scaleStr != null) {
+                try {
+                    obj.setScale(Double.parseDouble(scaleStr));
+                } catch (NumberFormatException e) {
+                    sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Invalid scale");
+                    return;
+                }
+            }
+            if (obj instanceof VirtualProp prop && fileHash != null) {
+                prop.setFileHash(fileHash);
+            }
+            if (obj instanceof VirtualSignpost signpost && content != null) {
+                signpost.setContent(content);
+            }
+
+            objectDao.update(obj);
+            resp.getWriter().write(toJson(obj).build().toString());
+        } catch (SQLException e) {
+            getServletContext().log("PATCH /api/objects failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
         }
+    }
+
+    @Override
+    protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        Long userId = requireAuth(req, resp);
+        if (userId == null) return;
+
+        Long id = parseIdFromPath(req);
+        if (id == null) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing object id");
+            return;
+        }
+
+        try {
+            VirtualObject obj = objectDao.findById(id);
+            if (obj == null) {
+                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Object not found");
+                return;
+            }
+            if (obj.getUserId() != userId) {
+                sendError(resp, HttpServletResponse.SC_FORBIDDEN, "Not your object");
+                return;
+            }
+            objectDao.delete(id);
+            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+        } catch (SQLException e) {
+            getServletContext().log("DELETE /api/objects failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+        }
+    }
+
+    private Long requireAuth(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        HttpSession session = req.getSession(false);
+        if (session == null || session.getAttribute("userId") == null) {
+            resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            return null;
+        }
+        return (Long) session.getAttribute("userId");
+    }
+
+    private Long parseIdFromPath(HttpServletRequest req) {
+        String pathInfo = req.getPathInfo();
+        if (pathInfo == null || pathInfo.length() <= 1) return null;
+        try {
+            return Long.parseLong(pathInfo.substring(1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private void sendError(HttpServletResponse resp, int status, String message) throws IOException {
+        resp.setStatus(status);
+        resp.setContentType("application/json");
+        resp.getWriter().write(Json.createObjectBuilder().add("error", message).build().toString());
+    }
+
+    private JsonObjectBuilder toJson(VirtualObject obj) {
+        JsonObjectBuilder b = Json.createObjectBuilder()
+                .add("id", obj.getId())
+                .add("userId", obj.getUserId())
+                .add("latitude", obj.getLatitude())
+                .add("longitude", obj.getLongitude())
+                .add("rotation", obj.getRotation())
+                .add("scale", obj.getScale());
+        if (obj instanceof VirtualProp prop) {
+            b.add("type", "prop").add("fileHash", prop.getFileHash());
+        } else if (obj instanceof VirtualSignpost signpost) {
+            b.add("type", "signpost").add("content", signpost.getContent());
+        }
+        return b;
     }
 }
