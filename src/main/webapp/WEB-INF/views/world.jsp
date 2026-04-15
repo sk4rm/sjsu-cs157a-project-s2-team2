@@ -50,6 +50,8 @@
             display: flex;
             justify-content: space-between;
             align-items: flex-start;
+            flex-wrap: wrap;
+            gap: 8px;
             z-index: 10;
         }
 
@@ -241,6 +243,9 @@
 
 <div class="hud-top">
     <a href="<%= request.getContextPath() %>/" class="hud-btn">← Exit World</a>
+    <button type="button" class="hud-btn" onclick="placeWorldSpaceTestCube()" title="Step A: drop test cube in scene world space (not on camera)">
+        test world cube
+    </button>
     <div class="status">
         <div id="status-location"><strong>Location</strong>: Acquiring...</div>
         <div id="status-objects" style="margin-top: 4px; color: #aaa;">Searching for props...</div>
@@ -303,6 +308,135 @@
     function clearPlacedFromScene(scene) {
         if (!scene) return;
         scene.querySelectorAll('[id^="obj-"]').forEach(el => el.remove());
+    }
+
+    /**
+     * Shared world-space target: center-screen ray ∩ plane y=0, else 2m along camera forward.
+     * Same math for Step B reticle preview and Step A/C placement.
+     */
+    function computeWorldPlacementTarget(scene) {
+        const THREE = window.THREE;
+        const cam = scene.camera;
+        const camEl = document.querySelector('a-camera');
+        if (!cam || !camEl || !THREE) return null;
+
+        const raycaster = new THREE.Raycaster();
+        raycaster.setFromCamera(new THREE.Vector2(0, 0), cam);
+
+        const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+        const hitPoint = new THREE.Vector3();
+        const planeHit = raycaster.ray.intersectPlane(groundPlane, hitPoint);
+
+        let wx, wy, wz;
+        let usedPlane = planeHit !== null;
+        if (usedPlane) {
+            wx = hitPoint.x;
+            wy = hitPoint.y;
+            wz = hitPoint.z;
+        } else {
+            const origin = new THREE.Vector3();
+            const dir = new THREE.Vector3();
+            camEl.object3D.getWorldPosition(origin);
+            camEl.object3D.getWorldDirection(dir);
+            const dist = 2;
+            wx = origin.x + dir.x * dist;
+            wy = origin.y + dir.y * dist;
+            wz = origin.z + dir.z * dist;
+        }
+        return { x: wx, y: wy, z: wz, usedPlane: usedPlane };
+    }
+
+    var placementReticleRaf = null;
+
+    function ensurePlacementReticle(scene) {
+        var el = document.getElementById('placement-reticle');
+        if (el) return el;
+        el = document.createElement('a-entity');
+        el.setAttribute('id', 'placement-reticle');
+        var ring = document.createElement('a-ring');
+        ring.setAttribute('radius-inner', '0.11');
+        ring.setAttribute('radius-outer', '0.17');
+        ring.setAttribute('rotation', '-90 0 0');
+        ring.setAttribute('material', 'color: #2ecc71; opacity: 0.72; shader: flat; side: double');
+        el.appendChild(ring);
+        scene.appendChild(el);
+        return el;
+    }
+
+    /** Step B: animate reticle at preview position (scene root, not camera). */
+    function startPlacementReticleLoop(scene) {
+        function tick() {
+            var t = computeWorldPlacementTarget(scene);
+            var reticle = document.getElementById('placement-reticle');
+            if (t && reticle) {
+                reticle.setAttribute('position', t.x + ' ' + t.y + ' ' + t.z);
+            }
+            placementReticleRaf = window.requestAnimationFrame(tick);
+        }
+        function begin() {
+            ensurePlacementReticle(scene);
+            if (placementReticleRaf) {
+                window.cancelAnimationFrame(placementReticleRaf);
+            }
+            placementReticleRaf = window.requestAnimationFrame(tick);
+        }
+        if (scene.hasLoaded) {
+            begin();
+        } else {
+            scene.addEventListener('loaded', begin, { once: true });
+        }
+    }
+
+    /**
+     * Step A: place a single test cube at the current preview target (same as reticle).
+     * Entity is a direct child of a-scene — never parented under a-camera.
+     */
+    function placeWorldSpaceTestCube() {
+        const scene = document.querySelector('a-scene');
+        if (!scene) {
+            console.warn('[ARP] placeWorldSpaceTestCube: no a-scene');
+            return;
+        }
+        const run = function () {
+            const THREE = window.THREE;
+            const t = computeWorldPlacementTarget(scene);
+            if (!t || !THREE) {
+                console.warn('[ARP] could not compute placement target');
+                return;
+            }
+            var wx = t.x, wy = t.y, wz = t.z;
+
+            var prev = document.getElementById('world-test-cube');
+            if (prev) prev.remove();
+
+            var root = document.createElement('a-entity');
+            root.setAttribute('id', 'world-test-cube');
+            root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
+
+            var box = document.createElement('a-box');
+            box.setAttribute('width', '0.45');
+            box.setAttribute('height', '0.45');
+            box.setAttribute('depth', '0.45');
+            box.setAttribute('position', '0 0.225 0');
+            box.setAttribute('material', 'color: #2ecc71; opacity: 0.95; roughness: 0.5');
+
+            root.appendChild(box);
+            scene.appendChild(root);
+
+            var p = root.parentEl;
+            console.log('[ARP] Step A — plane hit (y=0):', t.usedPlane, 'placement xyz:', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
+            console.log('[ARP] parent tag:', p && p.tagName, 'is scene root:', p === scene);
+            scene.object3D.updateMatrixWorld(true);
+            var wpos = new THREE.Vector3();
+            root.object3D.getWorldPosition(wpos);
+            console.log('[ARP] placed entity world position:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3));
+        };
+
+        if (scene.hasLoaded) {
+            run();
+        } else {
+            scene.addEventListener('loaded', run, { once: true });
+        }
     }
 
     // map geolocation error codes to a short hint (ios needs "allow" on first tap)
@@ -575,9 +709,15 @@
         });
         const scene = document.querySelector('a-scene');
         if (scene) {
-            scene.addEventListener('loaded', () => {
+            function onSceneReady() {
                 hideLoading();
-            });
+                startPlacementReticleLoop(scene);
+            }
+            if (scene.hasLoaded) {
+                onSceneReady();
+            } else {
+                scene.addEventListener('loaded', onSceneReady);
+            }
         }
         setTimeout(() => {
             if (document.getElementById('loading')) {
