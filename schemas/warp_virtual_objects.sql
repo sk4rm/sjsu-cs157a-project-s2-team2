@@ -30,6 +30,10 @@ CREATE TABLE `virtual_objects` (
   `position` point DEFAULT NULL,
   `rotation` varchar(255) DEFAULT '0,0,0,1' COMMENT 'Quaternion orientation (x,y,z,w)',
   `scale` decimal(10,4) DEFAULT '1.0000' COMMENT 'Uniform scale multiplier',
+  `ar_x` double DEFAULT NULL COMMENT 'a-frame world x at drop',
+  `ar_y` double DEFAULT NULL,
+  `ar_z` double DEFAULT NULL,
+  `ar_yaw_deg` double DEFAULT NULL COMMENT 'yaw deg so sign faces placer',
   PRIMARY KEY (`id`),
   KEY `user_id_idx` (`user_id`),
   CONSTRAINT `user_id` FOREIGN KEY (`user_id`) REFERENCES `user_accounts` (`id`)

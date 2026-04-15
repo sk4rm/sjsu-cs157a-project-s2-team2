@@ -11,15 +11,14 @@ import java.util.List;
 
 public class VirtualObjectDao {
 
-    // TODO(spatial-index): replace findAll with findNearby(lat, lng, radiusMeters).
-    // Requires: ALTER TABLE virtual_objects MODIFY position POINT NOT NULL SRID 4326,
-    // ADD SPATIAL INDEX (position); and flipping ST_X/ST_Y below (SRID 4326 treats
-    // ST_X as latitude, ST_Y as longitude). Query pattern: MBRContains bounding box
-    // (hits R-tree index) + ST_Distance_Sphere refine for exact radius in meters.
-    // Also update createBaseObject to bind POINT via ST_SRID(POINT(?, ?), 4326).
-
     public List<VirtualObject> findAll() throws SQLException {
-        String sql = "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, p.file_hash as detail, 'prop' as subtype " + "FROM virtual_objects v JOIN virtual_props p ON v.id = p.object_id " + "UNION " + "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, s.content as detail, 'signpost' as subtype " + "FROM virtual_objects v JOIN virtual_signposts s ON v.id = s.object_id";
+        String sql = "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, "
+                + "p.file_hash as detail, 'prop' as subtype, v.ar_x, v.ar_y, v.ar_z, v.ar_yaw_deg "
+                + "FROM virtual_objects v JOIN virtual_props p ON v.id = p.object_id "
+                + "UNION "
+                + "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, "
+                + "s.content as detail, 'signpost' as subtype, v.ar_x, v.ar_y, v.ar_z, v.ar_yaw_deg "
+                + "FROM virtual_objects v JOIN virtual_signposts s ON v.id = s.object_id";
 
         List<VirtualObject> objects = new ArrayList<>();
         try (Connection conn = DbUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql); ResultSet rs = ps.executeQuery()) {
@@ -72,10 +71,12 @@ public class VirtualObjectDao {
     }
 
     public VirtualObject findById(long id) throws SQLException {
-        String sql = "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, p.file_hash as detail, 'prop' as subtype "
+        String sql = "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, "
+                + "p.file_hash as detail, 'prop' as subtype, v.ar_x, v.ar_y, v.ar_z, v.ar_yaw_deg "
                 + "FROM virtual_objects v JOIN virtual_props p ON v.id = p.object_id WHERE v.id = ? "
                 + "UNION "
-                + "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, s.content as detail, 'signpost' as subtype "
+                + "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, "
+                + "s.content as detail, 'signpost' as subtype, v.ar_x, v.ar_y, v.ar_z, v.ar_yaw_deg "
                 + "FROM virtual_objects v JOIN virtual_signposts s ON v.id = s.object_id WHERE v.id = ?";
         try (Connection conn = DbUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, id);
@@ -162,12 +163,17 @@ public class VirtualObjectDao {
     }
 
     private long createBaseObject(Connection conn, VirtualObject obj) throws SQLException {
-        String sql = "INSERT INTO virtual_objects (user_id, position, rotation, scale) VALUES (?, ST_PointFromText(?), ?, ?)";
+        String sql = "INSERT INTO virtual_objects (user_id, position, rotation, scale, ar_x, ar_y, ar_z, ar_yaw_deg) "
+                + "VALUES (?, ST_PointFromText(?), ?, ?, ?, ?, ?, ?)";
         try (PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
             ps.setLong(1, obj.getUserId());
             ps.setString(2, "POINT(" + obj.getLongitude() + " " + obj.getLatitude() + ")");
             ps.setString(3, obj.getRotation());
             ps.setDouble(4, obj.getScale());
+            setNullableDouble(ps, 5, obj.getArX());
+            setNullableDouble(ps, 6, obj.getArY());
+            setNullableDouble(ps, 7, obj.getArZ());
+            setNullableDouble(ps, 8, obj.getArYawDeg());
             ps.executeUpdate();
 
             try (ResultSet rs = ps.getGeneratedKeys()) {
@@ -188,5 +194,33 @@ public class VirtualObjectDao {
         obj.setLatitude(rs.getDouble("lat"));
         obj.setRotation(rs.getString("rotation"));
         obj.setScale(rs.getDouble("scale"));
+        mapArColumns(rs, obj);
+    }
+
+    private void mapArColumns(ResultSet rs, VirtualObject obj) throws SQLException {
+        double x = rs.getDouble("ar_x");
+        if (!rs.wasNull()) {
+            obj.setArX(x);
+        }
+        double y = rs.getDouble("ar_y");
+        if (!rs.wasNull()) {
+            obj.setArY(y);
+        }
+        double z = rs.getDouble("ar_z");
+        if (!rs.wasNull()) {
+            obj.setArZ(z);
+        }
+        double yaw = rs.getDouble("ar_yaw_deg");
+        if (!rs.wasNull()) {
+            obj.setArYawDeg(yaw);
+        }
+    }
+
+    private void setNullableDouble(PreparedStatement ps, int idx, Double val) throws SQLException {
+        if (val != null) {
+            ps.setDouble(idx, val);
+        } else {
+            ps.setNull(idx, Types.DOUBLE);
+        }
     }
 }

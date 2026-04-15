@@ -60,3 +60,6 @@ logs/
 *.tmp.sql
 
 out/
+
+# local tools (e.g. downloaded cloudflared binary)
+.tools/

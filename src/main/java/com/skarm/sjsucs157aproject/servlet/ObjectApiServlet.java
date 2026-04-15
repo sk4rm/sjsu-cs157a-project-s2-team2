@@ -23,8 +23,6 @@ public class ObjectApiServlet extends HttpServlet {
 
     private final VirtualObjectDao objectDao = new VirtualObjectDao();
 
-    // HttpServlet predates RFC 5789, so PATCH is not dispatched by the base
-    // service() method. Intercept it here and delegate everything else upward.
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
         if ("PATCH".equalsIgnoreCase(req.getMethod())) {
@@ -68,7 +66,8 @@ public class ObjectApiServlet extends HttpServlet {
         Long userId = requireAuth(req, resp);
         if (userId == null) return;
 
-        if (req.getPathInfo() != null && !"/".equals(req.getPathInfo())) {
+        String pi = req.getPathInfo();
+        if (pi != null && pi.length() > 1) {
             resp.setStatus(HttpServletResponse.SC_METHOD_NOT_ALLOWED);
             return;
         }
@@ -87,12 +86,26 @@ public class ObjectApiServlet extends HttpServlet {
             double lat = Double.parseDouble(latParam);
             double lng = Double.parseDouble(lngParam);
 
+            Double arX = parseOptionalDouble(req.getParameter("arX"));
+            Double arY = parseOptionalDouble(req.getParameter("arY"));
+            Double arZ = parseOptionalDouble(req.getParameter("arZ"));
+            Double arYawDeg = parseOptionalDouble(req.getParameter("arYawDeg"));
+
             if ("signpost".equals(typeParam)) {
                 VirtualSignpost signpost = new VirtualSignpost();
                 signpost.setUserId(userId);
                 signpost.setLatitude(lat);
                 signpost.setLongitude(lng);
-                signpost.setContent(req.getParameter("content") != null ? req.getParameter("content") : "Default Signpost");
+                applyArAnchor(signpost, arX, arY, arZ, arYawDeg);
+                String raw = req.getParameter("content");
+                String msg = raw == null ? "" : raw.trim();
+                if (msg.isEmpty()) {
+                    msg = "signpost";
+                }
+                if (msg.length() > 250) {
+                    msg = msg.substring(0, 250);
+                }
+                signpost.setContent(msg);
                 objectDao.create(signpost);
                 resp.setStatus(HttpServletResponse.SC_CREATED);
                 resp.getWriter().write(toJson(signpost).build().toString());
@@ -101,6 +114,7 @@ public class ObjectApiServlet extends HttpServlet {
                 prop.setUserId(userId);
                 prop.setLatitude(lat);
                 prop.setLongitude(lng);
+                applyArAnchor(prop, arX, arY, arZ, arYawDeg);
                 prop.setFileHash(req.getParameter("fileHash") != null ? req.getParameter("fileHash") : "default_box_hash");
                 objectDao.create(prop);
                 resp.setStatus(HttpServletResponse.SC_CREATED);
@@ -197,7 +211,7 @@ public class ObjectApiServlet extends HttpServlet {
     private Long requireAuth(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         HttpSession session = req.getSession(false);
         if (session == null || session.getAttribute("userId") == null) {
-            resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
+            sendError(resp, HttpServletResponse.SC_UNAUTHORIZED, "not logged in");
             return null;
         }
         return (Long) session.getAttribute("userId");
@@ -211,6 +225,24 @@ public class ObjectApiServlet extends HttpServlet {
         } catch (NumberFormatException e) {
             return null;
         }
+    }
+
+    private static Double parseOptionalDouble(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Double.parseDouble(raw.trim());
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private static void applyArAnchor(VirtualObject obj, Double arX, Double arY, Double arZ, Double arYawDeg) {
+        obj.setArX(arX);
+        obj.setArY(arY);
+        obj.setArZ(arZ);
+        obj.setArYawDeg(arYawDeg);
     }
 
     private void sendError(HttpServletResponse resp, int status, String message) throws IOException {
@@ -227,6 +259,18 @@ public class ObjectApiServlet extends HttpServlet {
                 .add("longitude", obj.getLongitude())
                 .add("rotation", obj.getRotation())
                 .add("scale", obj.getScale());
+        if (obj.getArX() != null) {
+            b.add("arX", obj.getArX());
+        }
+        if (obj.getArY() != null) {
+            b.add("arY", obj.getArY());
+        }
+        if (obj.getArZ() != null) {
+            b.add("arZ", obj.getArZ());
+        }
+        if (obj.getArYawDeg() != null) {
+            b.add("arYawDeg", obj.getArYawDeg());
+        }
         if (obj instanceof VirtualProp prop) {
             b.add("type", "prop").add("fileHash", prop.getFileHash());
         } else if (obj instanceof VirtualSignpost signpost) {

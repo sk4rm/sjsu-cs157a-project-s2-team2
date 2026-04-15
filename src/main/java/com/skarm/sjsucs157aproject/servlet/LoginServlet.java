@@ -53,7 +53,8 @@ public class LoginServlet extends HttpServlet {
             session.setAttribute("userUsername", user.getUsername());
             session.setAttribute("userDisplayName", user.getDisplayName());
 
-            resp.sendRedirect(req.getContextPath() + "/");
+            // Land in AR world (camera) after login — home page is still at /
+            resp.sendRedirect(req.getContextPath() + "/world");
         } catch (SQLException e) {
             throw new ServletException("Database error during login", e);
         }

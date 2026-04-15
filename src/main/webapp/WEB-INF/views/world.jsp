@@ -5,11 +5,6 @@
 <head>
     <title>WARP - Camera View</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
-    <% if ("1".equals(request.getParameter("debug"))) { %>
-    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
-    <script>eruda.init();</script>
-    <% } %>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
     <style>
@@ -25,9 +20,6 @@
             color: white;
         }
 
-        /* Pin AR.js's generated webcam <video> to the full viewport and crop
-           (cover) instead of stretch. Broad selector because AR.js does not
-           always assign a stable id to the video element. */
         video {
             position: fixed !important;
             top: 0 !important;
@@ -39,8 +31,6 @@
             object-fit: cover;
         }
 
-        /* A-Frame's WebGL canvas sits above the video; force it to fill the
-           viewport transparently so 3D entities align with the cropped feed. */
         .a-canvas,
         a-scene canvas {
             position: fixed !important;
@@ -117,6 +107,62 @@
             transform: scale(0.9);
         }
 
+        .place-bar {
+            width: min(340px, 92vw);
+            padding: 10px 12px;
+            border-radius: 14px;
+            background: rgba(0, 0, 0, 0.55);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(6px);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .place-modes {
+            display: flex;
+            gap: 8px;
+        }
+
+        .mode-btn {
+            flex: 1;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.25);
+            background: rgba(40, 40, 40, 0.9);
+            color: #ddd;
+            font-size: 0.82rem;
+            cursor: pointer;
+        }
+
+        .mode-btn.on {
+            background: rgba(211, 127, 143, 0.55);
+            color: #fff;
+            border-color: rgba(255, 255, 255, 0.45);
+        }
+
+        .signpost-input {
+            width: 100%;
+            padding: 8px 10px;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            background: rgba(30, 30, 30, 0.95);
+            color: #fff;
+            font-size: 0.85rem;
+            box-sizing: border-box;
+        }
+
+        .signpost-input:disabled {
+            opacity: 0.45;
+        }
+
+        .place-hint {
+            font-size: 0.72rem;
+            color: #aaa;
+            text-align: center;
+            text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+        }
+
         .loading-overlay {
             position: absolute;
             top: 0;
@@ -130,6 +176,54 @@
             background: #000;
             z-index: 100;
             transition: opacity 0.5s;
+        }
+
+        /* tap-to-prompt: ios needs a real tap before the system location dialog appears */
+        .loc-prompt {
+            position: fixed;
+            top: 72px;
+            left: 12px;
+            right: 12px;
+            z-index: 15;
+            padding: 12px 14px;
+            border-radius: 14px;
+            background: rgba(20, 20, 20, 0.88);
+            border: 1px solid rgba(211, 127, 143, 0.45);
+            box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: stretch;
+            max-width: 420px;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .loc-prompt p {
+            margin: 0;
+            font-size: 0.82rem;
+            line-height: 1.35;
+            color: #e8e0e2;
+        }
+
+        .loc-prompt button {
+            padding: 11px 16px;
+            border-radius: 999px;
+            border: none;
+            background: linear-gradient(135deg, #d37f8f, #e6a3af);
+            color: #fff;
+            font-weight: 600;
+            font-size: 0.9rem;
+            cursor: pointer;
+        }
+
+        .loc-prompt button.secondary {
+            background: rgba(255, 255, 255, 0.12);
+            font-weight: 500;
+        }
+
+        .loc-prompt.hidden {
+            display: none;
         }
     </style>
 </head>
@@ -153,6 +247,12 @@
     </div>
 </div>
 
+<div id="loc-prompt" class="loc-prompt" role="dialog" aria-label="location permission">
+    <p id="loc-prompt-text">warp uses your gps to place cubes and signposts. if you already tapped allow in settings, we try to pick up coords automatically — or use the buttons below.</p>
+    <button type="button" class="loc-allow-btn" onclick="requestLocationPermission()">ask for location / refresh gps</button>
+    <button type="button" class="secondary" onclick="dismissLocPrompt()">hide this bar</button>
+</div>
+
 <a-scene vr-mode-ui="enabled: false" embedded
          arjs="sourceType: webcam; debugUIEnabled: false; antialias: true; alpha: true"
          renderer="antialias: true; alpha: true">
@@ -161,9 +261,16 @@
 </a-scene>
 
 <div class="hud-bottom">
-    <div style="font-size: 0.8rem; text-shadow: 0 2px 4px rgba(0,0,0,0.5);">Tap to drop a prop at your spot
+    <div class="place-bar">
+        <div class="place-modes">
+            <button type="button" class="mode-btn on" id="mode-cube" onclick="setPlaceMode('cube')">cube</button>
+            <button type="button" class="mode-btn" id="mode-sign" onclick="setPlaceMode('signpost')">signpost</button>
+        </div>
+        <input type="text" class="signpost-input" id="signpost-text" maxlength="250"
+               placeholder="signpost message (only for signpost)" disabled>
+        <div class="place-hint" id="place-hint">gps updates from camera, or we ask browser once on place</div>
     </div>
-    <div class="action-button" onclick="dropObject()" title="Drop Object">
+    <div class="action-button" onclick="placeAtGps()" title="place here">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -174,11 +281,262 @@
 <script>
     const API_URL = '<%= request.getContextPath() %>/api/objects';
     let currentPosition = null;
-    let watchId = null;
+    let placeMode = 'cube';
 
-    // Initialize location tracking
+    function setPlaceMode(mode) {
+        placeMode = mode;
+        document.getElementById('mode-cube').classList.toggle('on', mode === 'cube');
+        document.getElementById('mode-sign').classList.toggle('on', mode === 'signpost');
+        const inp = document.getElementById('signpost-text');
+        inp.disabled = mode !== 'signpost';
+        document.getElementById('place-hint').innerText =
+            mode === 'cube' ? 'drops a pink-ish cube at your coords' : 'drops a pole + board with your message';
+    }
+
+    function readApiError(response) {
+        return response.text().then(function (t) {
+            return t.slice(0, 120) || response.statusText;
+        });
+    }
+
+    // remove old placed entities so reload does not stack duplicates
+    function clearPlacedFromScene(scene) {
+        if (!scene) return;
+        scene.querySelectorAll('[id^="obj-"]').forEach(el => el.remove());
+    }
+
+    // map geolocation error codes to a short hint (ios needs "allow" on first tap)
+    function geoFailMessage(err) {
+        if (!err || err.code === undefined) return 'gps error — try again outside or allow location';
+        if (err.code === 1) return 'location blocked — tap allow, or settings > safari > location > while using';
+        if (err.code === 2) return 'position unavailable — move outdoors or wait for gps';
+        if (err.code === 3) return 'gps timed out — try again in open sky';
+        return 'gps error';
+    }
+
+    function dismissLocPrompt() {
+        var el = document.getElementById('loc-prompt');
+        if (el) el.classList.add('hidden');
+    }
+
+    function maybeHideLocPrompt() {
+        if (currentPosition && typeof currentPosition.latitude === 'number') {
+            dismissLocPrompt();
+        }
+    }
+
+    // after permission is already granted, this often works without a tap (safari skips permissions.query sometimes)
+    function trySilentLocationRead() {
+        if (!navigator.geolocation) return;
+        navigator.geolocation.getCurrentPosition(
+            function (pos) {
+                currentPosition = {
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude
+                };
+                var el = document.getElementById('status-location');
+                if (el) {
+                    el.innerHTML = '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
+                }
+                dismissLocPrompt();
+            },
+            function () { /* still blocked or needs tap — banner stays */ },
+            { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
+        );
+    }
+
+    // must run from a button tap so safari shows the system location dialog
+    function requestLocationPermission() {
+        var box = document.getElementById('loc-prompt');
+        if (box) box.classList.remove('denied');
+        if (!navigator.geolocation) {
+            var t0 = document.getElementById('loc-prompt-text');
+            if (t0) t0.innerText = 'this browser does not support geolocation.';
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            function (pos) {
+                currentPosition = {
+                    latitude: pos.coords.latitude,
+                    longitude: pos.coords.longitude
+                };
+                var st = document.getElementById('status-location');
+                if (st) {
+                    st.innerHTML = '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
+                }
+                dismissLocPrompt();
+            },
+            function (err) {
+                var box = document.getElementById('loc-prompt');
+                var t = document.getElementById('loc-prompt-text');
+                if (!t || !box) return;
+                if (err.code === 1) {
+                    box.classList.add('denied');
+                    t.innerText = 'location was blocked. on iphone: settings → privacy → location services → safari → while using. then reload this page.';
+                } else {
+                    t.innerText = geoFailMessage(err);
+                }
+            },
+            { enableHighAccuracy: true, timeout: 25000, maximumAge: 10000 }
+        );
+    }
+
+    function submitPlace(lat, lng) {
+        const formData = new URLSearchParams();
+        formData.append('latitude', String(lat));
+        formData.append('longitude', String(lng));
+        if (placeMode === 'signpost') {
+            formData.append('type', 'signpost');
+            const txt = document.getElementById('signpost-text').value.trim();
+            if (txt.length > 0) formData.append('content', txt);
+        } else {
+            formData.append('type', 'prop');
+            formData.append('fileHash', 'demo_cube');
+        }
+
+        fetch(API_URL, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        })
+            .then(function (response) {
+                if (response.ok) {
+                    return response.json().then(function () {
+                        showMessage(placeMode === 'signpost' ? 'signpost placed' : 'cube placed');
+                        return loadObjects();
+                    });
+                }
+                return readApiError(response).then(function (msg) {
+                    showMessage('place failed: ' + msg, true);
+                });
+            })
+            .catch(function () {
+                showMessage('network error on place', true);
+            });
+    }
+
+    // on iphone, geolocation works best if started from the same tap as the + button
+    function placeAtGps() {
+        if (currentPosition && typeof currentPosition.latitude === 'number') {
+            submitPlace(currentPosition.latitude, currentPosition.longitude);
+            return;
+        }
+        if (!navigator.geolocation) {
+            showMessage('this browser has no geolocation', true);
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            function (pos) {
+                submitPlace(pos.coords.latitude, pos.coords.longitude);
+            },
+            function (err) {
+                if (err.code === 3 || err.code === 2) {
+                    navigator.geolocation.getCurrentPosition(
+                        function (pos2) {
+                            submitPlace(pos2.coords.latitude, pos2.coords.longitude);
+                        },
+                        function () {
+                            showMessage(geoFailMessage(err), true);
+                        },
+                        { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 }
+                    );
+                    return;
+                }
+                showMessage(geoFailMessage(err), true);
+            },
+            { enableHighAccuracy: true, timeout: 25000, maximumAge: 10000 }
+        );
+    }
+
+    function attachCubeGps(scene, obj) {
+        var anchor = document.createElement('a-entity');
+        anchor.setAttribute('id', 'obj-' + obj.id);
+        anchor.setAttribute('gps-entity-place', 'latitude: ' + obj.latitude + '; longitude: ' + obj.longitude);
+        anchor.setAttribute('scale', '1 1 1');
+        var inner = document.createElement('a-entity');
+        if (obj.arYawDeg != null && !isNaN(obj.arYawDeg)) {
+            inner.setAttribute('rotation', '0 ' + (-obj.arYawDeg) + ' 0');
+        }
+        inner.setAttribute('position', '0 0.25 0');
+        var s = obj.scale || 1;
+        inner.setAttribute('scale', s + ' ' + s + ' ' + s);
+        var box = document.createElement('a-box');
+        box.setAttribute('width', '0.5');
+        box.setAttribute('height', '0.5');
+        box.setAttribute('depth', '0.5');
+        box.setAttribute('position', '0 0 0');
+        box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
+        inner.appendChild(box);
+        var tag = document.createElement('a-text');
+        tag.setAttribute('value', (obj.fileHash || 'cube').slice(0, 20));
+        tag.setAttribute('align', 'center');
+        tag.setAttribute('position', '0 0.45 0');
+        tag.setAttribute('scale', '0.7 0.7 0.7');
+        tag.setAttribute('color', '#ffffff');
+        inner.appendChild(tag);
+        anchor.appendChild(inner);
+        scene.appendChild(anchor);
+        return true;
+    }
+
+    function attachSignpostGps(scene, obj) {
+        var anchor = document.createElement('a-entity');
+        anchor.setAttribute('id', 'obj-' + obj.id);
+        anchor.setAttribute('gps-entity-place', 'latitude: ' + obj.latitude + '; longitude: ' + obj.longitude);
+        anchor.setAttribute('scale', '1 1 1');
+        var inner = document.createElement('a-entity');
+        if (obj.arYawDeg != null && !isNaN(obj.arYawDeg)) {
+            inner.setAttribute('rotation', '0 ' + (-obj.arYawDeg) + ' 0');
+        }
+        inner.setAttribute('position', '0 0 0');
+        var s = obj.scale || 1;
+        inner.setAttribute('scale', s + ' ' + s + ' ' + s);
+        var pole = document.createElement('a-cylinder');
+        pole.setAttribute('radius', '0.04');
+        pole.setAttribute('height', '1.1');
+        pole.setAttribute('position', '0 0.55 0');
+        pole.setAttribute('material', 'color: #5c4033; roughness: 0.9');
+        inner.appendChild(pole);
+        var board = document.createElement('a-plane');
+        board.setAttribute('width', '1.4');
+        board.setAttribute('height', '0.42');
+        board.setAttribute('position', '0 1.22 0.02');
+        board.setAttribute('material', 'color: #f4e8dc; opacity: 0.95; side: double');
+        inner.appendChild(board);
+        var msg = (obj.content || 'signpost').slice(0, 80);
+        var text = document.createElement('a-text');
+        text.setAttribute('value', msg);
+        text.setAttribute('align', 'center');
+        text.setAttribute('position', '0 1.22 0.06');
+        text.setAttribute('color', '#2a1a22');
+        text.setAttribute('width', '1.25');
+        inner.appendChild(text);
+        anchor.appendChild(inner);
+        scene.appendChild(anchor);
+        return true;
+    }
+
+    function placeObjectsInScene(scene, list) {
+        if (!scene) return;
+        function run() {
+            list.forEach(function (obj) {
+                if (document.getElementById('obj-' + obj.id)) return;
+                if (obj.type === 'signpost') {
+                    attachSignpostGps(scene, obj);
+                } else {
+                    attachCubeGps(scene, obj);
+                }
+            });
+        }
+        if (scene.hasLoaded) {
+            run();
+        } else {
+            scene.addEventListener('loaded', run, { once: true });
+        }
+    }
+
     window.onload = () => {
-        console.log("WARP: Initializing world...");
         const loadingSub = document.getElementById('loading-sub');
 
         if (!navigator.geolocation) {
@@ -188,31 +546,45 @@
 
         loadingSub.innerText = "Starting camera...";
 
-        // Hide the loading overlay as soon as the camera video is live, so the
-        // user sees the feed without waiting on a GPS lock (iPhone lock times
-        // are unreliable, especially indoors).
+        // if browser exposes permission state, react; safari often omits this api
+        if (navigator.permissions && navigator.permissions.query) {
+            navigator.permissions.query({ name: 'geolocation' }).then(function (r) {
+                if (r.state === 'granted') {
+                    trySilentLocationRead();
+                }
+                if (r.state === 'denied') {
+                    var box = document.getElementById('loc-prompt');
+                    var t = document.getElementById('loc-prompt-text');
+                    if (box && t) {
+                        box.classList.add('denied');
+                        t.innerText = 'location is denied for this site. change it in browser settings, then reload.';
+                    }
+                }
+                r.addEventListener('change', function () {
+                    if (r.state === 'granted') {
+                        trySilentLocationRead();
+                    }
+                });
+            }).catch(function () {});
+        }
+
+        setTimeout(trySilentLocationRead, 500);
+
         document.addEventListener('arjs-video-loaded', () => {
-            console.log("WARP: AR.js video loaded.");
             hideLoading();
         });
         const scene = document.querySelector('a-scene');
         if (scene) {
             scene.addEventListener('loaded', () => {
-                console.log("WARP: A-Frame scene loaded.");
                 hideLoading();
             });
         }
-        // Safety net: force-hide after 8s even if neither event fires, so the
-        // user never stares at a permanent black screen.
         setTimeout(() => {
             if (document.getElementById('loading')) {
-                console.warn("WARP: loading overlay force-hidden after timeout.");
                 hideLoading();
             }
         }, 8000);
 
-        // GPS status is now purely informational — it updates the HUD but does
-        // not gate the camera feed.
         window.addEventListener('gps-camera-update-position', e => {
             currentPosition = {
                 latitude: e.detail.position.latitude,
@@ -220,14 +592,27 @@
             };
             document.getElementById('status-location').innerHTML =
                 '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
+            maybeHideLocPrompt();
         });
 
-        window.addEventListener('gps-camera-origin-coord-set', () => {
-            console.log("WARP: AR.js GPS origin acquired.");
-        });
+        if (navigator.geolocation) {
+            navigator.geolocation.watchPosition(
+                function (pos) {
+                    currentPosition = {
+                        latitude: pos.coords.latitude,
+                        longitude: pos.coords.longitude
+                    };
+                    var el = document.getElementById('status-location');
+                    if (el) {
+                        el.innerHTML = '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
+                    }
+                    maybeHideLocPrompt();
+                },
+                function () { /* silent — use allow location button or + to prompt */ },
+                { enableHighAccuracy: true, maximumAge: 5000, timeout: 60000 }
+            );
+        }
 
-        // iOS fires orientationchange before applying the new viewport size,
-        // so nudge A-Frame after a short delay to re-measure.
         window.addEventListener('orientationchange', () => {
             setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
         });
@@ -279,98 +664,30 @@
     }
 
     async function loadObjects() {
+        const scene = document.querySelector('a-scene');
+        const statusObj = document.getElementById('status-objects');
+        if (!scene) return;
         try {
-            const response = await fetch(API_URL);
+            const response = await fetch(API_URL, { credentials: 'same-origin' });
+            if (!response.ok) {
+                showMessage('could not load objects: ' + await readApiError(response), true);
+                return;
+            }
             const objects = await response.json();
-            const scene = document.querySelector('a-scene');
+            clearPlacedFromScene(scene);
 
-            const statusObj = document.getElementById('status-objects');
-            statusObj.setAttribute('data-original', 'Found ' + objects.length + ' nearby props');
+            statusObj.setAttribute('data-original', 'loaded ' + objects.length + ' things');
             if (!window.msgTimeout) {
-                statusObj.innerText = 'Found ' + objects.length + ' nearby props';
+                statusObj.innerText = 'loaded ' + objects.length + ' things';
                 statusObj.style.color = '#aaa';
             }
 
-            objects.forEach(obj => {
-                // Avoid duplicates if we reload
-                if (document.getElementById('obj-' + obj.id)) return;
-
-                let entity;
-                if (obj.type === 'signpost') {
-                    // Signpost rendering: a floating text plate
-                    entity = document.createElement('a-entity');
-                    entity.setAttribute('id', 'obj-' + obj.id);
-                    entity.setAttribute('gps-entity-place', 'latitude: ' + obj.latitude + '; longitude: ' + obj.longitude);
-
-                    const text = document.createElement('a-text');
-                    text.setAttribute('value', obj.content || 'Empty Signpost');
-                    text.setAttribute('align', 'center');
-                    text.setAttribute('color', '#ffffff');
-                    text.setAttribute('scale', '4 4 4');
-                    text.setAttribute('look-at', '[gps-camera]');
-                    text.setAttribute('geometry', 'primitive: plane; width: auto; height: 0.3');
-                    text.setAttribute('material', 'color: #3f2b32; opacity: 0.8');
-                    entity.appendChild(text);
-                } else {
-                    // Prop rendering: a 3D box
-                    entity = document.createElement('a-box');
-                    entity.setAttribute('id', 'obj-' + obj.id);
-                    entity.setAttribute('gps-entity-place', 'latitude: ' + obj.latitude + '; longitude: ' + obj.longitude);
-                    entity.setAttribute('material', 'color: #d37f8f; opacity: 0.8');
-
-                    const textLabel = document.createElement('a-text');
-                    textLabel.setAttribute('value', obj.fileHash || 'PROP');
-                    textLabel.setAttribute('align', 'center');
-                    textLabel.setAttribute('position', '0 1.2 0');
-                    textLabel.setAttribute('scale', '2 2 2');
-                    textLabel.setAttribute('look-at', '[gps-camera]');
-                    entity.appendChild(textLabel);
-                }
-
-                const scaleVal = obj.scale || 1;
-                entity.setAttribute('scale', scaleVal + ' ' + scaleVal + ' ' + scaleVal);
-                // Database uses quaternion "x,y,z,w", A-Frame standard rotation is Euler.
-                // For now, we'll maintain the orientation logic as a placeholder.
-
-                scene.appendChild(entity);
-            });
+            placeObjectsInScene(scene, objects);
         } catch (err) {
-            console.error("Failed to load objects:", err);
+            if (statusObj) showMessage('load failed (network?)', true);
         }
     }
 
-    async function dropObject() {
-        if (!currentPosition) {
-            showMessage("Acquiring GPS... please wait.", true);
-            return;
-        }
-
-        const formData = new URLSearchParams();
-        formData.append('latitude', currentPosition.latitude);
-        formData.append('longitude', currentPosition.longitude);
-        formData.append('type', 'prop');
-
-        try {
-            const response = await fetch(API_URL, {
-                method: 'POST',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body: formData
-            });
-
-            if (response.ok) {
-                const result = await response.json();
-                console.log("Object dropped!", result);
-                showMessage("Object dropped successfully!");
-                await loadObjects(); // Refresh the scene
-            } else {
-                const err = await response.json();
-                showMessage("Failed to drop object: " + (err.error || response.statusText), true);
-            }
-        } catch (err) {
-            console.error("Drop error:", err);
-            showMessage("Network error while dropping object.", true);
-        }
-    }
 </script>
 
 </body>

@@ -7,6 +7,11 @@ public class VirtualObject {
     private double longitude;
     private String rotation = "0,0,0,1"; // Match DB default (quaternion)
     private double scale = 1.0;
+    /** optional: scene pose when dropped (persists stationary layout) */
+    private Double arX;
+    private Double arY;
+    private Double arZ;
+    private Double arYawDeg;
 
     public long getId() {
         return id;
@@ -54,5 +59,37 @@ public class VirtualObject {
 
     public void setScale(double scale) {
         this.scale = scale;
+    }
+
+    public Double getArX() {
+        return arX;
+    }
+
+    public void setArX(Double arX) {
+        this.arX = arX;
+    }
+
+    public Double getArY() {
+        return arY;
+    }
+
+    public void setArY(Double arY) {
+        this.arY = arY;
+    }
+
+    public Double getArZ() {
+        return arZ;
+    }
+
+    public void setArZ(Double arZ) {
+        this.arZ = arZ;
+    }
+
+    public Double getArYawDeg() {
+        return arYawDeg;
+    }
+
+    public void setArYawDeg(Double arYawDeg) {
+        this.arYawDeg = arYawDeg;
     }
 }

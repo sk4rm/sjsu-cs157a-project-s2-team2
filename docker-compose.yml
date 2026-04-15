@@ -1,0 +1,17 @@
+# Local MySQL matching DbUtil defaults (DB_USER=warp_user, DB_PASSWORD=warp_password, DB=warp).
+# Usage: start Docker Desktop, then: docker compose up -d
+# Then: ./scripts/import-warp-schemas.sh
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: warp-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: warp_root_local
+      MYSQL_DATABASE: warp
+      MYSQL_USER: warp_user
+      MYSQL_PASSWORD: warp_password
+    ports:
+      - "3306:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_0900_ai_ci

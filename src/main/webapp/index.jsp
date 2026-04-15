@@ -468,6 +468,7 @@
         <a href="javascript:void(0)" class="primary-btn" onclick="scrollToTarget('join')">Get started</a>
         <% } else { %>
         <span class="pill">Signed in as <strong><%= userDisplayName %></strong></span>
+        <a href="<%= request.getContextPath() %>/world" class="primary-btn" style="padding:8px 14px;font-size:0.82rem;">Camera</a>
         <a href="<%= request.getContextPath() %>/account">Account</a>
         <form style="display:inline;margin-left:8px;" method="post" action="<%= request.getContextPath() %>/logout">
             <button type="submit" class="ghost-btn">Sign out</button>
