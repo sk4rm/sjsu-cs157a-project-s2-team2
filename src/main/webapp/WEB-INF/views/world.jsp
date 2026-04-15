@@ -538,7 +538,7 @@
         }
     }
 
-    // pink cube from ring + save row to localStorage
+    // ring position -> try api (gps + ar xyz), else localStorage fallback
     function placeWorldSpacePermanentCube() {
         const scene = document.querySelector('a-scene');
         if (!scene) return;
@@ -550,17 +550,35 @@
                 return;
             }
             var wx = t.x, wy = t.y, wz = t.z;
-            var id = 'world-placed-' + Date.now();
-            spawnWorldCubeEntity(scene, id, wx, wy, wz);
-            appendWorldPlacementSession({ kind: 'cube', id: id, x: wx, y: wy, z: wz, savedAt: Date.now() });
-
-            var root = document.getElementById(id);
-            scene.object3D.updateMatrixWorld(true);
-            var wpos = new THREE.Vector3();
-            if (root) root.object3D.getWorldPosition(wpos);
-            console.log('[ARP] world cube id', id, 'xyz', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
-            console.log('[ARP] world pos after add:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3), 'parent===scene:', root && root.parentEl === scene);
-            showMessage('cube placed in world');
+            resolveLatLngThen(function (lat, lng) {
+                function offlineDrop() {
+                    var id = 'world-placed-' + Date.now();
+                    spawnWorldCubeEntity(scene, id, wx, wy, wz);
+                    appendWorldPlacementSession({ kind: 'cube', id: id, x: wx, y: wy, z: wz, savedAt: Date.now() });
+                    showMessage('no gps / server — saved local only', true);
+                }
+                if (lat == null || lng == null) {
+                    offlineDrop();
+                    return;
+                }
+                submitWorldPlaceWithAr(lat, lng, wx, wy, wz, false)
+                    .then(function (response) {
+                        if (response.ok) {
+                            return response.json().then(function () {
+                                showMessage('cube saved');
+                                return loadObjects();
+                            });
+                        }
+                        return readApiError(response).then(function (msg) {
+                            showMessage('save failed: ' + msg, true);
+                            offlineDrop();
+                        });
+                    })
+                    .catch(function () {
+                        showMessage('network bust — local copy kept', true);
+                        offlineDrop();
+                    });
+            });
         };
         if (scene.hasLoaded) {
             run();
@@ -592,7 +610,7 @@
         inner.appendChild(text);
     }
 
-    // signpost mesh stuck in scene, not the gps anchor thing
+    // same as cube but signpost type + text field
     function placeWorldSpacePermanentSignpost() {
         const scene = document.querySelector('a-scene');
         if (!scene) return;
@@ -606,17 +624,35 @@
             var wx = t.x, wy = t.y, wz = t.z;
             var raw = document.getElementById('signpost-text').value.trim();
             var msg = (raw.length > 0 ? raw : 'signpost').slice(0, 80);
-            var id = 'world-signpost-' + Date.now();
-            spawnWorldSignpostEntity(scene, id, wx, wy, wz, msg);
-            appendWorldPlacementSession({ kind: 'signpost', id: id, x: wx, y: wy, z: wz, content: msg, savedAt: Date.now() });
-
-            var root = document.getElementById(id);
-            scene.object3D.updateMatrixWorld(true);
-            var wpos = new THREE.Vector3();
-            if (root) root.object3D.getWorldPosition(wpos);
-            console.log('[ARP] world signpost id:', id, 'snapshot xyz:', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
-            console.log('[ARP] parent===scene:', root && root.parentEl === scene, 'world pos:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3));
-            showMessage('signpost placed in world');
+            resolveLatLngThen(function (lat, lng) {
+                function offlineDrop() {
+                    var id = 'world-signpost-' + Date.now();
+                    spawnWorldSignpostEntity(scene, id, wx, wy, wz, msg);
+                    appendWorldPlacementSession({ kind: 'signpost', id: id, x: wx, y: wy, z: wz, content: msg, savedAt: Date.now() });
+                    showMessage('no gps / server — saved local only', true);
+                }
+                if (lat == null || lng == null) {
+                    offlineDrop();
+                    return;
+                }
+                submitWorldPlaceWithAr(lat, lng, wx, wy, wz, true)
+                    .then(function (response) {
+                        if (response.ok) {
+                            return response.json().then(function () {
+                                showMessage('signpost saved');
+                                return loadObjects();
+                            });
+                        }
+                        return readApiError(response).then(function (errMsg) {
+                            showMessage('save failed: ' + errMsg, true);
+                            offlineDrop();
+                        });
+                    })
+                    .catch(function () {
+                        showMessage('network bust — local copy kept', true);
+                        offlineDrop();
+                    });
+            });
         };
         if (scene.hasLoaded) {
             run();
@@ -748,6 +784,50 @@
             });
     }
 
+    // gps tag + a-frame xyz for world drops (api already stores ar_x etc)
+    function submitWorldPlaceWithAr(lat, lng, wx, wy, wz, isSignpost) {
+        const formData = new URLSearchParams();
+        formData.append('latitude', String(lat));
+        formData.append('longitude', String(lng));
+        formData.append('arX', String(wx));
+        formData.append('arY', String(wy));
+        formData.append('arZ', String(wz));
+        if (isSignpost) {
+            formData.append('type', 'signpost');
+            const txt = document.getElementById('signpost-text').value.trim();
+            if (txt.length > 0) formData.append('content', txt);
+        } else {
+            formData.append('type', 'prop');
+            formData.append('fileHash', 'demo_cube');
+        }
+        return fetch(API_URL, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            body: formData
+        });
+    }
+
+    function resolveLatLngThen(callback) {
+        if (currentPosition && typeof currentPosition.latitude === 'number') {
+            callback(currentPosition.latitude, currentPosition.longitude);
+            return;
+        }
+        if (!navigator.geolocation) {
+            callback(null, null);
+            return;
+        }
+        navigator.geolocation.getCurrentPosition(
+            function (pos) {
+                callback(pos.coords.latitude, pos.coords.longitude);
+            },
+            function () {
+                callback(null, null);
+            },
+            { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }
+        );
+    }
+
     // same tap as + helps gps on iphone
     function placeAtGps() {
         if (currentPosition && typeof currentPosition.latitude === 'number') {
@@ -831,12 +911,71 @@
         return true;
     }
 
+    function objectHasWorldAnchor(obj) {
+        return obj && typeof obj.arX === 'number' && typeof obj.arY === 'number' && typeof obj.arZ === 'number'
+            && !isNaN(obj.arX) && !isNaN(obj.arY) && !isNaN(obj.arZ);
+    }
+
+    function attachCubeWorld(scene, obj) {
+        var root = document.createElement('a-entity');
+        root.setAttribute('id', 'obj-' + obj.id);
+        root.setAttribute('position', obj.arX + ' ' + obj.arY + ' ' + obj.arZ);
+        var inner = document.createElement('a-entity');
+        if (obj.arYawDeg != null && !isNaN(obj.arYawDeg)) {
+            inner.setAttribute('rotation', '0 ' + (-obj.arYawDeg) + ' 0');
+        }
+        inner.setAttribute('position', '0 0.25 0');
+        var s = obj.scale || 1;
+        inner.setAttribute('scale', s + ' ' + s + ' ' + s);
+        var box = document.createElement('a-box');
+        box.setAttribute('width', '0.5');
+        box.setAttribute('height', '0.5');
+        box.setAttribute('depth', '0.5');
+        box.setAttribute('position', '0 0 0');
+        box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
+        inner.appendChild(box);
+        var tag = document.createElement('a-text');
+        tag.setAttribute('value', (obj.fileHash || 'cube').slice(0, 20));
+        tag.setAttribute('align', 'center');
+        tag.setAttribute('position', '0 0.45 0');
+        tag.setAttribute('scale', '0.7 0.7 0.7');
+        tag.setAttribute('color', '#ffffff');
+        inner.appendChild(tag);
+        root.appendChild(inner);
+        scene.appendChild(root);
+        return true;
+    }
+
+    function attachSignpostWorld(scene, obj) {
+        var root = document.createElement('a-entity');
+        root.setAttribute('id', 'obj-' + obj.id);
+        root.setAttribute('position', obj.arX + ' ' + obj.arY + ' ' + obj.arZ);
+        var inner = document.createElement('a-entity');
+        if (obj.arYawDeg != null && !isNaN(obj.arYawDeg)) {
+            inner.setAttribute('rotation', '0 ' + (-obj.arYawDeg) + ' 0');
+        }
+        inner.setAttribute('position', '0 0 0');
+        var s = obj.scale || 1;
+        inner.setAttribute('scale', s + ' ' + s + ' ' + s);
+        var msg = (obj.content || 'signpost').slice(0, 80);
+        fillSignpostInner(inner, msg);
+        root.appendChild(inner);
+        scene.appendChild(root);
+        return true;
+    }
+
     function placeObjectsInScene(scene, list) {
         if (!scene) return;
         function run() {
             list.forEach(function (obj) {
                 if (document.getElementById('obj-' + obj.id)) return;
-                if (obj.type === 'signpost') {
+                if (objectHasWorldAnchor(obj)) {
+                    if (obj.type === 'signpost') {
+                        attachSignpostWorld(scene, obj);
+                    } else {
+                        attachCubeWorld(scene, obj);
+                    }
+                } else if (obj.type === 'signpost') {
                     attachSignpostGps(scene, obj);
                 } else {
                     attachCubeGps(scene, obj);
