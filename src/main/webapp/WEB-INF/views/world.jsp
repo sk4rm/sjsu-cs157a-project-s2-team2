@@ -227,6 +227,65 @@
         .loc-prompt.hidden {
             display: none;
         }
+
+        @media (max-width: 640px) {
+            .hud-top {
+                top: 10px;
+                left: 10px;
+                right: 10px;
+                gap: 6px;
+            }
+
+            .hud-btn {
+                padding: 8px 12px;
+                font-size: 0.78rem;
+            }
+
+            .status {
+                max-width: 100%;
+                width: 100%;
+                font-size: 0.78rem;
+                padding: 8px 10px;
+            }
+
+            .hud-bottom {
+                bottom: 14px;
+                gap: 8px;
+            }
+
+            .place-bar {
+                width: min(96vw, 380px);
+                padding: 8px 9px;
+                gap: 6px;
+            }
+
+            .mode-btn {
+                padding: 7px 8px;
+                font-size: 0.76rem;
+            }
+
+            .signpost-input {
+                font-size: 0.78rem;
+                padding: 7px 8px;
+            }
+
+            .place-hint {
+                font-size: 0.68rem;
+            }
+
+            .action-button {
+                width: 62px;
+                height: 62px;
+            }
+
+            .loc-prompt {
+                top: 58px;
+                left: 8px;
+                right: 8px;
+                padding: 10px 11px;
+                gap: 8px;
+            }
+        }
     </style>
 </head>
 

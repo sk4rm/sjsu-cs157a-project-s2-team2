@@ -3,6 +3,7 @@
 <html>
 <head>
     <title>WARP – Web AR Platform</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <style>
         :root {
             --bg-soft: #e9dddd;
@@ -48,7 +49,7 @@
         }
         .logo span { color: var(--accent-rose); }
 
-        nav { display: flex; align-items: center; gap: 10px; }
+        nav { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: flex-end; }
         nav a { font-size: 0.84rem; text-decoration: none; color: var(--text-main); opacity: 0.8; }
         nav a:hover { opacity: 1; }
 
@@ -450,6 +451,73 @@
         }
 
         footer { max-width: 1080px; margin: 0 auto 32px; padding: 0 20px; font-size: 0.75rem; color: var(--text-muted); display: flex; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+
+        @media (max-width: 760px) {
+            header {
+                padding: 10px 12px;
+                gap: 10px;
+                align-items: flex-start;
+            }
+
+            .logo {
+                font-size: 0.82rem;
+                letter-spacing: 0.08em;
+            }
+
+            nav {
+                width: 100%;
+                justify-content: flex-start;
+                gap: 8px;
+            }
+
+            nav a,
+            .pill,
+            .ghost-btn,
+            .primary-btn,
+            .cta-chip {
+                font-size: 0.8rem;
+            }
+
+            .page-shell {
+                padding: 14px 12px 64px;
+            }
+
+            .hero-shell {
+                min-height: auto;
+                gap: 18px;
+                padding-top: 14px;
+            }
+
+            h1 {
+                font-size: clamp(1.6rem, 9vw, 2.1rem);
+            }
+
+            .hero-sub,
+            .feed-subtitle {
+                font-size: 0.9rem;
+            }
+
+            .section-shell,
+            .flow-band {
+                padding: 36px 12px 28px;
+            }
+
+            .story-card,
+            .feature-card,
+            .community-card,
+            .signup-panel {
+                padding: 18px 16px 20px;
+                border-radius: 18px;
+            }
+
+            .signup-panel {
+                margin: 30px auto 36px;
+            }
+
+            .signup-grid {
+                gap: 14px;
+            }
+        }
     </style>
 </head>
 <body>
