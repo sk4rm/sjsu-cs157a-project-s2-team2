@@ -271,11 +271,15 @@
             <button type="button" class="mode-btn on" id="mode-cube" onclick="setPlaceMode('cube')">cube</button>
             <button type="button" class="mode-btn" id="mode-sign" onclick="setPlaceMode('signpost')">signpost</button>
         </div>
+        <div class="place-modes">
+            <button type="button" class="mode-btn on" id="space-gps" onclick="setPlaceSpace('gps')">GPS</button>
+            <button type="button" class="mode-btn" id="space-world" onclick="setPlaceSpace('world')">world</button>
+        </div>
         <input type="text" class="signpost-input" id="signpost-text" maxlength="250"
                placeholder="signpost message (only for signpost)" disabled>
         <div class="place-hint" id="place-hint">gps updates from camera, or we ask browser once on place</div>
     </div>
-    <div class="action-button" onclick="placeAtGps()" title="place here">
+    <div class="action-button" onclick="onPlaceButton()" title="place here (GPS or world)">
         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
@@ -287,6 +291,8 @@
     const API_URL = '<%= request.getContextPath() %>/api/objects';
     let currentPosition = null;
     let placeMode = 'cube';
+    /** 'gps' = save via lat/lng API; 'world' = drop at reticle in scene root */
+    let placeSpace = 'gps';
 
     function setPlaceMode(mode) {
         placeMode = mode;
@@ -294,8 +300,28 @@
         document.getElementById('mode-sign').classList.toggle('on', mode === 'signpost');
         const inp = document.getElementById('signpost-text');
         inp.disabled = mode !== 'signpost';
-        document.getElementById('place-hint').innerText =
-            mode === 'cube' ? 'drops a pink-ish cube at your coords' : 'drops a pole + board with your message';
+        syncPlaceHint();
+    }
+
+    function setPlaceSpace(space) {
+        placeSpace = space;
+        document.getElementById('space-gps').classList.toggle('on', space === 'gps');
+        document.getElementById('space-world').classList.toggle('on', space === 'world');
+        syncPlaceHint();
+    }
+
+    function syncPlaceHint() {
+        const el = document.getElementById('place-hint');
+        if (!el) return;
+        if (placeSpace === 'world') {
+            if (placeMode === 'signpost') {
+                el.innerText = 'world signpost: use GPS for now — signpost+world next';
+            } else {
+                el.innerText = 'aim the green ring, then tap + — cube stays put as you move';
+            }
+        } else {
+            el.innerText = placeMode === 'cube' ? 'drops a pink-ish cube at your coords' : 'drops a pole + board with your message';
+        }
     }
 
     function readApiError(response) {
@@ -368,8 +394,11 @@
         function tick() {
             var t = computeWorldPlacementTarget(scene);
             var reticle = document.getElementById('placement-reticle');
-            if (t && reticle) {
+            if (placeSpace === 'world' && t && reticle) {
+                reticle.setAttribute('visible', true);
                 reticle.setAttribute('position', t.x + ' ' + t.y + ' ' + t.z);
+            } else if (reticle) {
+                reticle.setAttribute('visible', false);
             }
             placementReticleRaf = window.requestAnimationFrame(tick);
         }
@@ -437,6 +466,71 @@
         } else {
             scene.addEventListener('loaded', run, { once: true });
         }
+    }
+
+    /**
+     * Step C: permanent cube at current reticle transform (snapshot at tap — not parented to camera).
+     * Each drop gets a new id so multiple cubes can coexist for the session.
+     */
+    function placeWorldSpacePermanentCube() {
+        const scene = document.querySelector('a-scene');
+        if (!scene) return;
+        const run = function () {
+            const THREE = window.THREE;
+            const t = computeWorldPlacementTarget(scene);
+            if (!t || !THREE) {
+                showMessage('could not place — wait for scene', true);
+                return;
+            }
+            var wx = t.x, wy = t.y, wz = t.z;
+            var id = 'world-placed-' + Date.now();
+
+            var root = document.createElement('a-entity');
+            root.setAttribute('id', id);
+            root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
+
+            var box = document.createElement('a-box');
+            box.setAttribute('width', '0.5');
+            box.setAttribute('height', '0.5');
+            box.setAttribute('depth', '0.5');
+            box.setAttribute('position', '0 0.25 0');
+            box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
+
+            var tag = document.createElement('a-text');
+            tag.setAttribute('value', 'world');
+            tag.setAttribute('align', 'center');
+            tag.setAttribute('position', '0 0.45 0');
+            tag.setAttribute('scale', '0.5 0.5 0.5');
+            tag.setAttribute('color', '#ffffff');
+
+            root.appendChild(box);
+            root.appendChild(tag);
+            scene.appendChild(root);
+
+            scene.object3D.updateMatrixWorld(true);
+            var wpos = new THREE.Vector3();
+            root.object3D.getWorldPosition(wpos);
+            console.log('[ARP] Step C permanent id:', id, 'snapshot xyz:', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
+            console.log('[ARP] world pos after add:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3), 'parent===scene:', root.parentEl === scene);
+            showMessage('cube placed in world');
+        };
+        if (scene.hasLoaded) {
+            run();
+        } else {
+            scene.addEventListener('loaded', run, { once: true });
+        }
+    }
+
+    function onPlaceButton() {
+        if (placeSpace === 'world') {
+            if (placeMode === 'signpost') {
+                showMessage('use GPS for signpost for now', true);
+                return;
+            }
+            placeWorldSpacePermanentCube();
+            return;
+        }
+        placeAtGps();
     }
 
     // map geolocation error codes to a short hint (ios needs "allow" on first tap)
@@ -757,6 +851,7 @@
             setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
         });
 
+        syncPlaceHint();
         loadObjects();
     };
 
