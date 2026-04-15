@@ -315,7 +315,7 @@
         if (!el) return;
         if (placeSpace === 'world') {
             if (placeMode === 'signpost') {
-                el.innerText = 'world signpost: use GPS for now — signpost+world next';
+                el.innerText = 'aim the ring, type message, tap + — signpost stays in world space';
             } else {
                 el.innerText = 'aim the green ring, then tap + — cube stays put as you move';
             }
@@ -521,10 +521,73 @@
         }
     }
 
+    /** Pole + board + text (no billboard look-at — avoids dragging position with camera). */
+    function fillSignpostInner(inner, contentSlice) {
+        var pole = document.createElement('a-cylinder');
+        pole.setAttribute('radius', '0.04');
+        pole.setAttribute('height', '1.1');
+        pole.setAttribute('position', '0 0.55 0');
+        pole.setAttribute('material', 'color: #5c4033; roughness: 0.9');
+        inner.appendChild(pole);
+        var board = document.createElement('a-plane');
+        board.setAttribute('width', '1.4');
+        board.setAttribute('height', '0.42');
+        board.setAttribute('position', '0 1.22 0.02');
+        board.setAttribute('material', 'color: #f4e8dc; opacity: 0.95; side: double');
+        inner.appendChild(board);
+        var text = document.createElement('a-text');
+        text.setAttribute('value', contentSlice);
+        text.setAttribute('align', 'center');
+        text.setAttribute('position', '0 1.22 0.06');
+        text.setAttribute('color', '#2a1a22');
+        text.setAttribute('width', '1.25');
+        inner.appendChild(text);
+    }
+
+    /** Step D: same as world cube — snapshot reticle position, scene root only (no gps-entity-place). */
+    function placeWorldSpacePermanentSignpost() {
+        const scene = document.querySelector('a-scene');
+        if (!scene) return;
+        const run = function () {
+            const THREE = window.THREE;
+            const t = computeWorldPlacementTarget(scene);
+            if (!t || !THREE) {
+                showMessage('could not place — wait for scene', true);
+                return;
+            }
+            var wx = t.x, wy = t.y, wz = t.z;
+            var raw = document.getElementById('signpost-text').value.trim();
+            var msg = (raw.length > 0 ? raw : 'signpost').slice(0, 80);
+            var id = 'world-signpost-' + Date.now();
+
+            var root = document.createElement('a-entity');
+            root.setAttribute('id', id);
+            root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
+
+            var inner = document.createElement('a-entity');
+            inner.setAttribute('position', '0 0 0');
+            fillSignpostInner(inner, msg);
+            root.appendChild(inner);
+            scene.appendChild(root);
+
+            scene.object3D.updateMatrixWorld(true);
+            var wpos = new THREE.Vector3();
+            root.object3D.getWorldPosition(wpos);
+            console.log('[ARP] world signpost id:', id, 'snapshot xyz:', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
+            console.log('[ARP] parent===scene:', root.parentEl === scene, 'world pos:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3));
+            showMessage('signpost placed in world');
+        };
+        if (scene.hasLoaded) {
+            run();
+        } else {
+            scene.addEventListener('loaded', run, { once: true });
+        }
+    }
+
     function onPlaceButton() {
         if (placeSpace === 'world') {
             if (placeMode === 'signpost') {
-                showMessage('use GPS for signpost for now', true);
+                placeWorldSpacePermanentSignpost();
                 return;
             }
             placeWorldSpacePermanentCube();
@@ -720,26 +783,8 @@
         inner.setAttribute('position', '0 0 0');
         var s = obj.scale || 1;
         inner.setAttribute('scale', s + ' ' + s + ' ' + s);
-        var pole = document.createElement('a-cylinder');
-        pole.setAttribute('radius', '0.04');
-        pole.setAttribute('height', '1.1');
-        pole.setAttribute('position', '0 0.55 0');
-        pole.setAttribute('material', 'color: #5c4033; roughness: 0.9');
-        inner.appendChild(pole);
-        var board = document.createElement('a-plane');
-        board.setAttribute('width', '1.4');
-        board.setAttribute('height', '0.42');
-        board.setAttribute('position', '0 1.22 0.02');
-        board.setAttribute('material', 'color: #f4e8dc; opacity: 0.95; side: double');
-        inner.appendChild(board);
         var msg = (obj.content || 'signpost').slice(0, 80);
-        var text = document.createElement('a-text');
-        text.setAttribute('value', msg);
-        text.setAttribute('align', 'center');
-        text.setAttribute('position', '0 1.22 0.06');
-        text.setAttribute('color', '#2a1a22');
-        text.setAttribute('width', '1.25');
-        inner.appendChild(text);
+        fillSignpostInner(inner, msg);
         anchor.appendChild(inner);
         scene.appendChild(anchor);
         return true;
