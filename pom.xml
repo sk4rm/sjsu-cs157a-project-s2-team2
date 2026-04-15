@@ -12,7 +12,7 @@
 
     <properties>
         <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-        <!-- keep java version the same as the jdk tomcat is using (21 / class file 65) -->
+        <!-- match whatever jdk tomcat uses -->
         <maven.compiler.source>21</maven.compiler.source>
         <maven.compiler.target>21</maven.compiler.target>
         <junit.version>5.13.2</junit.version>
@@ -66,7 +66,7 @@
                 <artifactId>maven-war-plugin</artifactId>
                 <version>3.4.0</version>
             </plugin>
-            <!-- Run locally: mvn jetty:run (same Jakarta Servlet 6 / EE 10 stack as Tomcat 10+) -->
+            <!-- quick run: mvn jetty:run -->
             <plugin>
                 <groupId>org.eclipse.jetty.ee10</groupId>
                 <artifactId>jetty-ee10-maven-plugin</artifactId>

@@ -52,7 +52,7 @@
         nav a { font-size: 0.84rem; text-decoration: none; color: var(--text-main); opacity: 0.8; }
         nav a:hover { opacity: 1; }
 
-        /* shared button styles */
+        /* buttons */
         .primary-btn,
         .cta-chip.primary {
             padding: 10px 18px;
@@ -98,7 +98,7 @@
             transform: translateY(-1px);
         }
 
-        /* page shell + hero */
+        /* top hero */
         .page-shell {
             max-width: 1120px;
             margin: 0 auto;
@@ -166,7 +166,7 @@
             max-width: 680px;
         }
 
-        /* staggered story grid - cleaner 2-column layout */
+        /* story cards two col */
         .story-grid {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -226,7 +226,7 @@
             line-height: 1.5;
         }
 
-        /* feature masonry band - cleaner 2-column split */
+        /* feature grid */
         .feature-grid {
             display: grid;
             grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
@@ -255,7 +255,7 @@
             margin-bottom: 12px;
         }
 
-        /* community / social proof */
+        /* community fake feed thing */
         .community-band {
             display: grid;
             grid-template-columns: minmax(0, 2.1fr) minmax(0, 1.6fr);
@@ -346,7 +346,7 @@
             opacity: 0.6;
         }
 
-        /* flow band before registration */
+        /* little chips above signup */
         .flow-band {
             max-width: 1120px;
             margin: 0 auto;
@@ -367,7 +367,7 @@
             color: var(--text-muted);
         }
 
-        /* registration destination at the bottom */
+        /* signup box */
         .signup-panel {
             max-width: 760px;
             margin: 60px auto 56px;
@@ -740,12 +740,12 @@
 </footer>
 
 <script>
-    // simple helper so scroll targets don't end up under the sticky header
+    // scroll to id but leave room for sticky nav
     function scrollToTarget(id) {
         var el = document.getElementById(id);
         if (!el) return;
 
-        var headerOffset = 80; // height of sticky header area
+        var headerOffset = 80; // rough nav height
         var rect = el.getBoundingClientRect();
         var scrollTop = window.pageYOffset || document.documentElement.scrollTop;
         var targetY = rect.top + scrollTop - headerOffset;

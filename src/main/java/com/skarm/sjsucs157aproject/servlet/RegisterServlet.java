@@ -19,7 +19,7 @@ public class RegisterServlet extends HttpServlet {
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
-        // reg form is on homepage, so redirect there
+        // signup form is on index not here
         resp.sendRedirect(req.getContextPath() + "/");
     }
 

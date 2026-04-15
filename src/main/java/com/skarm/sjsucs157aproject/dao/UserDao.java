@@ -5,7 +5,7 @@ import com.skarm.sjsucs157aproject.util.DbUtil;
 
 import java.sql.*;
 
-// Simple DAO for user database operations
+// user table stuff
 public class UserDao {
 
     public User findByUsername(String username) throws SQLException {
@@ -62,11 +62,7 @@ public class UserDao {
         }
     }
 
-    // Fully deletes a user and everything that references them. None of the
-    // child tables declare ON DELETE CASCADE, so we clear each FK manually
-    // inside a single transaction. Order: first the user's owned virtual
-    // objects (and their children), then the user's activity on other users'
-    // content, then the user row itself.
+    // nuke user + their junk — no cascade in sql so we delete in order by hand
     public void deleteById(long userId) throws SQLException {
         String[] statements = {
                 "DELETE FROM virtual_props WHERE object_id IN (SELECT id FROM virtual_objects WHERE user_id = ?)",
@@ -88,7 +84,7 @@ public class UserDao {
                 for (String sql : statements) {
                     try (PreparedStatement ps = conn.prepareStatement(sql)) {
                         ps.setLong(1, userId);
-                        // The befriends statement is the only one with two params.
+                        // friends row needs both user ids
                         if (sql.contains("user_id_2")) {
                             ps.setLong(2, userId);
                         }

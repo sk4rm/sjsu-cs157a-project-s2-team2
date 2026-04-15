@@ -5,7 +5,7 @@ import de.mkammerer.argon2.Argon2Factory;
 
 public class PasswordUtil {
 
-    // OWASP minimum recommended Argon2id parameters
+    // argon2id knobs — dont make em weaker for class demo
     private static final int ITERATIONS = 2;
     private static final int MEMORY_KIB = 19456;
     private static final int PARALLELISM = 1;

@@ -1,4 +1,4 @@
--- Remove every prop/signpost and related rows. Run against `warp` (see import-warp-schemas.sh).
+-- wipes props/signposts + related junk — use `warp` db (see import-warp-schemas.sh)
 USE warp;
 
 SET FOREIGN_KEY_CHECKS = 0;

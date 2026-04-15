@@ -5,9 +5,9 @@ public class VirtualObject {
     private long userId;
     private double latitude;
     private double longitude;
-    private String rotation = "0,0,0,1"; // Match DB default (quaternion)
+    private String rotation = "0,0,0,1"; // same default as db (quat)
     private double scale = 1.0;
-    /** optional: scene pose when dropped (persists stationary layout) */
+    // where it sat in a-frame when we saved it (optional)
     private Double arX;
     private Double arY;
     private Double arZ;

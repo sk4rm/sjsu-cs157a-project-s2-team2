@@ -180,7 +180,7 @@
             transition: opacity 0.5s;
         }
 
-        /* tap-to-prompt: ios needs a real tap before the system location dialog appears */
+        /* ios usually wants a tap before it shows the location popup */
         .loc-prompt {
             position: fixed;
             top: 72px;
@@ -243,7 +243,7 @@
 
 <div class="hud-top">
     <a href="<%= request.getContextPath() %>/" class="hud-btn">← Exit World</a>
-    <button type="button" class="hud-btn" onclick="placeWorldSpaceTestCube()" title="Step A: drop test cube in scene world space (not on camera)">
+    <button type="button" class="hud-btn" onclick="placeWorldSpaceTestCube()" title="dev: green cube on the ring, not glued to camera">
         test world cube
     </button>
     <div class="status">
@@ -291,7 +291,7 @@
     const API_URL = '<%= request.getContextPath() %>/api/objects';
     let currentPosition = null;
     let placeMode = 'cube';
-    /** 'gps' = save via lat/lng API; 'world' = drop at reticle in scene root */
+    // gps = post lat/lng, world = drop where the ring is (scene root)
     let placeSpace = 'gps';
 
     function setPlaceMode(mode) {
@@ -330,16 +330,89 @@
         });
     }
 
-    // remove old placed entities so reload does not stack duplicates
+    // clear server-spawned stuff before we redraw (obj-* ids)
     function clearPlacedFromScene(scene) {
         if (!scene) return;
         scene.querySelectorAll('[id^="obj-"]').forEach(el => el.remove());
     }
 
-    /**
-     * Shared world-space target: center-screen ray ∩ plane y=0, else 2m along camera forward.
-     * Same math for Step B reticle preview and Step A/C placement.
-     */
+    // localStorage for world mode only; db props still come from /api
+    var WORLD_SESSION_KEY = 'warp-world-placements-v1';
+
+    function appendWorldPlacementSession(rec) {
+        try {
+            var list = JSON.parse(localStorage.getItem(WORLD_SESSION_KEY) || '[]');
+            if (!Array.isArray(list)) list = [];
+            list.push(rec);
+            localStorage.setItem(WORLD_SESSION_KEY, JSON.stringify(list));
+            console.log('[ARP] session saved:', rec.kind, rec.id);
+        } catch (e) {
+            console.warn('[ARP] session save failed', e);
+        }
+    }
+
+    function spawnWorldCubeEntity(scene, id, wx, wy, wz) {
+        var root = document.createElement('a-entity');
+        root.setAttribute('id', id);
+        root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
+        var box = document.createElement('a-box');
+        box.setAttribute('width', '0.5');
+        box.setAttribute('height', '0.5');
+        box.setAttribute('depth', '0.5');
+        box.setAttribute('position', '0 0.25 0');
+        box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
+        var tag = document.createElement('a-text');
+        tag.setAttribute('value', 'world');
+        tag.setAttribute('align', 'center');
+        tag.setAttribute('position', '0 0.45 0');
+        tag.setAttribute('scale', '0.5 0.5 0.5');
+        tag.setAttribute('color', '#ffffff');
+        root.appendChild(box);
+        root.appendChild(tag);
+        scene.appendChild(root);
+    }
+
+    function spawnWorldSignpostEntity(scene, id, wx, wy, wz, msg) {
+        var root = document.createElement('a-entity');
+        root.setAttribute('id', id);
+        root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
+        var inner = document.createElement('a-entity');
+        inner.setAttribute('position', '0 0 0');
+        fillSignpostInner(inner, msg);
+        root.appendChild(inner);
+        scene.appendChild(root);
+    }
+
+    function restoreWorldPlacementsFromSession(scene) {
+        function run() {
+            var list = [];
+            try {
+                list = JSON.parse(localStorage.getItem(WORLD_SESSION_KEY) || '[]');
+            } catch (e) {
+                return;
+            }
+            if (!Array.isArray(list)) return;
+            var n = 0;
+            list.forEach(function (rec) {
+                if (!rec || !rec.id || document.getElementById(rec.id)) return;
+                if (rec.kind === 'cube' && rec.x != null && rec.y != null && rec.z != null) {
+                    spawnWorldCubeEntity(scene, rec.id, rec.x, rec.y, rec.z);
+                    n++;
+                } else if (rec.kind === 'signpost' && rec.content != null && rec.x != null && rec.y != null && rec.z != null) {
+                    spawnWorldSignpostEntity(scene, rec.id, rec.x, rec.y, rec.z, rec.content);
+                    n++;
+                }
+            });
+            if (n > 0) console.log('[ARP] restored', n, 'world placements from localStorage');
+        }
+        if (scene.hasLoaded) {
+            run();
+        } else {
+            scene.addEventListener('loaded', run, { once: true });
+        }
+    }
+
+    // middle of screen ray -> y=0 floor, else 2m in front of you
     function computeWorldPlacementTarget(scene) {
         const THREE = window.THREE;
         const cam = scene.camera;
@@ -389,7 +462,7 @@
         return el;
     }
 
-    /** Step B: animate reticle at preview position (scene root, not camera). */
+    // ring chases that hit point every frame
     function startPlacementReticleLoop(scene) {
         function tick() {
             var t = computeWorldPlacementTarget(scene);
@@ -416,10 +489,7 @@
         }
     }
 
-    /**
-     * Step A: place a single test cube at the current preview target (same as reticle).
-     * Entity is a direct child of a-scene — never parented under a-camera.
-     */
+    // scratch green cube to sanity-check placement
     function placeWorldSpaceTestCube() {
         const scene = document.querySelector('a-scene');
         if (!scene) {
@@ -453,7 +523,7 @@
             scene.appendChild(root);
 
             var p = root.parentEl;
-            console.log('[ARP] Step A — plane hit (y=0):', t.usedPlane, 'placement xyz:', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
+            console.log('[ARP] test cube hit floor?', t.usedPlane, 'xyz', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
             console.log('[ARP] parent tag:', p && p.tagName, 'is scene root:', p === scene);
             scene.object3D.updateMatrixWorld(true);
             var wpos = new THREE.Vector3();
@@ -468,10 +538,7 @@
         }
     }
 
-    /**
-     * Step C: permanent cube at current reticle transform (snapshot at tap — not parented to camera).
-     * Each drop gets a new id so multiple cubes can coexist for the session.
-     */
+    // pink cube from ring + save row to localStorage
     function placeWorldSpacePermanentCube() {
         const scene = document.querySelector('a-scene');
         if (!scene) return;
@@ -484,34 +551,15 @@
             }
             var wx = t.x, wy = t.y, wz = t.z;
             var id = 'world-placed-' + Date.now();
+            spawnWorldCubeEntity(scene, id, wx, wy, wz);
+            appendWorldPlacementSession({ kind: 'cube', id: id, x: wx, y: wy, z: wz, savedAt: Date.now() });
 
-            var root = document.createElement('a-entity');
-            root.setAttribute('id', id);
-            root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
-
-            var box = document.createElement('a-box');
-            box.setAttribute('width', '0.5');
-            box.setAttribute('height', '0.5');
-            box.setAttribute('depth', '0.5');
-            box.setAttribute('position', '0 0.25 0');
-            box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
-
-            var tag = document.createElement('a-text');
-            tag.setAttribute('value', 'world');
-            tag.setAttribute('align', 'center');
-            tag.setAttribute('position', '0 0.45 0');
-            tag.setAttribute('scale', '0.5 0.5 0.5');
-            tag.setAttribute('color', '#ffffff');
-
-            root.appendChild(box);
-            root.appendChild(tag);
-            scene.appendChild(root);
-
+            var root = document.getElementById(id);
             scene.object3D.updateMatrixWorld(true);
             var wpos = new THREE.Vector3();
-            root.object3D.getWorldPosition(wpos);
-            console.log('[ARP] Step C permanent id:', id, 'snapshot xyz:', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
-            console.log('[ARP] world pos after add:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3), 'parent===scene:', root.parentEl === scene);
+            if (root) root.object3D.getWorldPosition(wpos);
+            console.log('[ARP] world cube id', id, 'xyz', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
+            console.log('[ARP] world pos after add:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3), 'parent===scene:', root && root.parentEl === scene);
             showMessage('cube placed in world');
         };
         if (scene.hasLoaded) {
@@ -521,7 +569,7 @@
         }
     }
 
-    /** Pole + board + text (no billboard look-at — avoids dragging position with camera). */
+    // plain text, no look-at (that messes with staying put)
     function fillSignpostInner(inner, contentSlice) {
         var pole = document.createElement('a-cylinder');
         pole.setAttribute('radius', '0.04');
@@ -544,7 +592,7 @@
         inner.appendChild(text);
     }
 
-    /** Step D: same as world cube — snapshot reticle position, scene root only (no gps-entity-place). */
+    // signpost mesh stuck in scene, not the gps anchor thing
     function placeWorldSpacePermanentSignpost() {
         const scene = document.querySelector('a-scene');
         if (!scene) return;
@@ -559,22 +607,15 @@
             var raw = document.getElementById('signpost-text').value.trim();
             var msg = (raw.length > 0 ? raw : 'signpost').slice(0, 80);
             var id = 'world-signpost-' + Date.now();
+            spawnWorldSignpostEntity(scene, id, wx, wy, wz, msg);
+            appendWorldPlacementSession({ kind: 'signpost', id: id, x: wx, y: wy, z: wz, content: msg, savedAt: Date.now() });
 
-            var root = document.createElement('a-entity');
-            root.setAttribute('id', id);
-            root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
-
-            var inner = document.createElement('a-entity');
-            inner.setAttribute('position', '0 0 0');
-            fillSignpostInner(inner, msg);
-            root.appendChild(inner);
-            scene.appendChild(root);
-
+            var root = document.getElementById(id);
             scene.object3D.updateMatrixWorld(true);
             var wpos = new THREE.Vector3();
-            root.object3D.getWorldPosition(wpos);
+            if (root) root.object3D.getWorldPosition(wpos);
             console.log('[ARP] world signpost id:', id, 'snapshot xyz:', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
-            console.log('[ARP] parent===scene:', root.parentEl === scene, 'world pos:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3));
+            console.log('[ARP] parent===scene:', root && root.parentEl === scene, 'world pos:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3));
             showMessage('signpost placed in world');
         };
         if (scene.hasLoaded) {
@@ -596,7 +637,7 @@
         placeAtGps();
     }
 
-    // map geolocation error codes to a short hint (ios needs "allow" on first tap)
+    // turn geo error codes into something readable
     function geoFailMessage(err) {
         if (!err || err.code === undefined) return 'gps error — try again outside or allow location';
         if (err.code === 1) return 'location blocked — tap allow, or settings > safari > location > while using';
@@ -616,7 +657,7 @@
         }
     }
 
-    // after permission is already granted, this often works without a tap (safari skips permissions.query sometimes)
+    // sneak a read if browser already said yes (works sometimes on safari lol)
     function trySilentLocationRead() {
         if (!navigator.geolocation) return;
         navigator.geolocation.getCurrentPosition(
@@ -631,12 +672,12 @@
                 }
                 dismissLocPrompt();
             },
-            function () { /* still blocked or needs tap — banner stays */ },
+            function () { /* blocked / need tap, leave banner */ },
             { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
         );
     }
 
-    // must run from a button tap so safari shows the system location dialog
+    // ios wants a real button press before the location popup
     function requestLocationPermission() {
         var box = document.getElementById('loc-prompt');
         if (box) box.classList.remove('denied');
@@ -707,7 +748,7 @@
             });
     }
 
-    // on iphone, geolocation works best if started from the same tap as the + button
+    // same tap as + helps gps on iphone
     function placeAtGps() {
         if (currentPosition && typeof currentPosition.latitude === 'number') {
             submitPlace(currentPosition.latitude, currentPosition.longitude);
@@ -819,7 +860,7 @@
 
         loadingSub.innerText = "Starting camera...";
 
-        // if browser exposes permission state, react; safari often omits this api
+        // chrome has permissions api, safari often doesnt
         if (navigator.permissions && navigator.permissions.query) {
             navigator.permissions.query({ name: 'geolocation' }).then(function (r) {
                 if (r.state === 'granted') {
@@ -887,7 +928,7 @@
                     }
                     maybeHideLocPrompt();
                 },
-                function () { /* silent — use allow location button or + to prompt */ },
+                function () { /* gps fail quiet — user can hit allow or + */ },
                 { enableHighAccuracy: true, maximumAge: 5000, timeout: 60000 }
             );
         }
@@ -951,6 +992,7 @@
             const response = await fetch(API_URL, { credentials: 'same-origin' });
             if (!response.ok) {
                 showMessage('could not load objects: ' + await readApiError(response), true);
+                restoreWorldPlacementsFromSession(scene);
                 return;
             }
             const objects = await response.json();
@@ -963,8 +1005,10 @@
             }
 
             placeObjectsInScene(scene, objects);
+            restoreWorldPlacementsFromSession(scene);
         } catch (err) {
             if (statusObj) showMessage('load failed (network?)', true);
+            restoreWorldPlacementsFromSession(scene);
         }
     }
 

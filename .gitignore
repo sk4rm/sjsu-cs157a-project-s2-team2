@@ -63,3 +63,5 @@ out/
 
 # local tools (e.g. downloaded cloudflared binary)
 .tools/
+scripts/cloudflared
+scripts/cloudflared.tgz

@@ -6,9 +6,9 @@
 
     <display-name>WARP - Web AR Platform</display-name>
 
-    <!-- Basic session configuration -->
+    <!-- how long login lasts -->
     <session-config>
-        <!-- 30 minutes session timeout -->
+        <!-- 30 min -->
         <session-timeout>30</session-timeout>
     </session-config>
 
@@ -16,7 +16,7 @@
         <welcome-file>index.jsp</welcome-file>
     </welcome-file-list>
 
-    <!-- basic servlet mapping for login so /login always works -->
+    <!-- extra /login mapping (servlet also has @WebServlet) -->
     <servlet>
         <servlet-name>loginServlet</servlet-name>
         <servlet-class>com.skarm.sjsucs157aproject.servlet.LoginServlet</servlet-class>
