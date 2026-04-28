@@ -7,6 +7,7 @@ import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Statement;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -28,5 +29,24 @@ public class LayerDao {
         }
 
         return layers;
+    }
+
+    public Layer create(String name) throws SQLException {
+        String sql = "INSERT INTO layers (name) VALUES (?)";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql, Statement.RETURN_GENERATED_KEYS)) {
+            ps.setString(1, name);
+            ps.executeUpdate();
+
+            try (ResultSet rs = ps.getGeneratedKeys()) {
+                if (rs.next()) {
+                    Layer layer = new Layer();
+                    layer.setLayerId(rs.getLong(1));
+                    layer.setName(name);
+                    return layer;
+                }
+            }
+        }
+        throw new SQLException("Failed to create layer, no ID returned.");
     }
 }

@@ -46,17 +46,53 @@ public class LayerApiServlet extends HttpServlet {
         }
     }
 
+    @Override
+    protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        if (!isAuthenticated(req, resp)) {
+            return;
+        }
+
+        String rawName = req.getParameter("name");
+        String name = rawName == null ? "" : rawName.trim();
+        if (name.isEmpty()) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing layer name");
+            return;
+        }
+        if (name.length() > 45) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Layer name too long");
+            return;
+        }
+
+        resp.setContentType("application/json");
+        try {
+            Layer created = layerDao.create(name);
+            resp.setStatus(HttpServletResponse.SC_CREATED);
+            resp.getWriter().write(Json.createObjectBuilder()
+                    .add("layerId", created.getLayerId())
+                    .add("name", created.getName())
+                    .build()
+                    .toString());
+        } catch (SQLException e) {
+            getServletContext().log("POST /api/layers failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+        }
+    }
+
     private boolean isAuthenticated(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         HttpSession session = req.getSession(false);
         if (session == null || session.getAttribute("userId") == null) {
-            resp.setStatus(HttpServletResponse.SC_UNAUTHORIZED);
-            resp.setContentType("application/json");
-            resp.getWriter().write(Json.createObjectBuilder()
-                    .add("error", "not logged in")
-                    .build()
-                    .toString());
+            sendError(resp, HttpServletResponse.SC_UNAUTHORIZED, "not logged in");
             return false;
         }
         return true;
+    }
+
+    private void sendError(HttpServletResponse resp, int status, String message) throws IOException {
+        resp.setStatus(status);
+        resp.setContentType("application/json");
+        resp.getWriter().write(Json.createObjectBuilder()
+                .add("error", message)
+                .build()
+                .toString());
     }
 }
