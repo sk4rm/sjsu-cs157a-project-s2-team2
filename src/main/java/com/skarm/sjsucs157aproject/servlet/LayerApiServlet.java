@@ -128,6 +128,31 @@ public class LayerApiServlet extends HttpServlet {
         }
     }
 
+    @Override
+    protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        if (!isAuthenticated(req, resp)) {
+            return;
+        }
+
+        Long layerId = parseIdFromPath(req);
+        if (layerId == null) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing layer id");
+            return;
+        }
+
+        try {
+            boolean deleted = layerDao.delete(layerId);
+            if (!deleted) {
+                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Layer not found");
+                return;
+            }
+            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+        } catch (SQLException e) {
+            getServletContext().log("DELETE /api/layers failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+        }
+    }
+
     private boolean isAuthenticated(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         HttpSession session = req.getSession(false);
         if (session == null || session.getAttribute("userId") == null) {

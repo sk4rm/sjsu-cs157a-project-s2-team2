@@ -59,4 +59,30 @@ public class LayerDao {
             return ps.executeUpdate() > 0;
         }
     }
+
+    public boolean delete(long layerId) throws SQLException {
+        try (Connection conn = DbUtil.getConnection()) {
+            conn.setAutoCommit(false);
+            try {
+                try (PreparedStatement ps = conn.prepareStatement("DELETE FROM includes WHERE layer_id = ?")) {
+                    ps.setLong(1, layerId);
+                    ps.executeUpdate();
+                }
+
+                int rows;
+                try (PreparedStatement ps = conn.prepareStatement("DELETE FROM layers WHERE layer_id = ?")) {
+                    ps.setLong(1, layerId);
+                    rows = ps.executeUpdate();
+                }
+
+                conn.commit();
+                return rows > 0;
+            } catch (SQLException e) {
+                conn.rollback();
+                throw e;
+            } finally {
+                conn.setAutoCommit(true);
+            }
+        }
+    }
 }
