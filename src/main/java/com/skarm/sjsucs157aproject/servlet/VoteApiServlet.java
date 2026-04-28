@@ -108,6 +108,41 @@ public class VoteApiServlet extends HttpServlet {
         }
     }
 
+    @Override
+    protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        HttpSession session = req.getSession(false);
+        if (session == null || session.getAttribute("userId") == null) {
+            sendError(resp, HttpServletResponse.SC_UNAUTHORIZED, "not logged in");
+            return;
+        }
+        long userId = (Long) session.getAttribute("userId");
+
+        Long objectId = parseLongParam(req.getParameter("objectId"));
+        if (objectId == null) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing objectId");
+            return;
+        }
+
+        resp.setContentType("application/json");
+        try {
+            if (objectDao.findById(objectId) == null) {
+                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Object not found");
+                return;
+            }
+            voteDao.delete(userId, objectId);
+            VoteDao.Tally t = voteDao.tallyForObject(objectId);
+            resp.getWriter().write(Json.createObjectBuilder()
+                    .add("objectId", objectId)
+                    .add("up", t.up())
+                    .add("down", t.down())
+                    .build()
+                    .toString());
+        } catch (SQLException e) {
+            getServletContext().log("DELETE /api/votes failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+        }
+    }
+
     private static Long parseLongParam(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;

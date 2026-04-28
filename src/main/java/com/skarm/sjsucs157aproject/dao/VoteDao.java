@@ -57,4 +57,14 @@ public class VoteDao {
             ps.executeUpdate();
         }
     }
+
+    public boolean delete(long voterId, long objectId) throws SQLException {
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(
+                     "DELETE FROM votes WHERE voter_id = ? AND object_id = ?")) {
+            ps.setLong(1, voterId);
+            ps.setLong(2, objectId);
+            return ps.executeUpdate() > 0;
+        }
+    }
 }

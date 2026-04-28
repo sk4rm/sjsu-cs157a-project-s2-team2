@@ -17,7 +17,7 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
 
-@WebServlet(name = "commentApiServlet", urlPatterns = {"/api/comments"})
+@WebServlet(name = "commentApiServlet", urlPatterns = {"/api/comments", "/api/comments/*"})
 public class CommentApiServlet extends HttpServlet {
 
     private final CommentDao commentDao = new CommentDao();
@@ -45,6 +45,37 @@ public class CommentApiServlet extends HttpServlet {
             resp.getWriter().write(arr.build().toString());
         } catch (SQLException e) {
             getServletContext().log("GET /api/comments failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+        }
+    }
+
+    @Override
+    protected void doDelete(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        Long userId = requireAuth(req, resp);
+        if (userId == null) {
+            return;
+        }
+
+        Long commentId = parseIdFromPath(req);
+        if (commentId == null) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing comment id");
+            return;
+        }
+
+        try {
+            Comment existing = commentDao.findById(commentId);
+            if (existing == null) {
+                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Comment not found");
+                return;
+            }
+            if (existing.getCommenterId() != userId) {
+                sendError(resp, HttpServletResponse.SC_FORBIDDEN, "Not your comment");
+                return;
+            }
+            commentDao.deleteById(commentId);
+            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+        } catch (SQLException e) {
+            getServletContext().log("DELETE /api/comments failed", e);
             sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
         }
     }
@@ -94,6 +125,18 @@ public class CommentApiServlet extends HttpServlet {
             return null;
         }
         return (Long) session.getAttribute("userId");
+    }
+
+    private static Long parseIdFromPath(HttpServletRequest req) {
+        String pathInfo = req.getPathInfo();
+        if (pathInfo == null || pathInfo.length() <= 1) {
+            return null;
+        }
+        try {
+            return Long.parseLong(pathInfo.substring(1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private static Long parseLongParam(String raw) {

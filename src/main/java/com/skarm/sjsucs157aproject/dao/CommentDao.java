@@ -61,6 +61,14 @@ public class CommentDao {
         }
     }
 
+    public boolean deleteById(long id) throws SQLException {
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement("DELETE FROM comments WHERE id = ?")) {
+            ps.setLong(1, id);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
     private static Comment mapRow(ResultSet rs) throws SQLException {
         Comment c = new Comment();
         c.setId(rs.getLong("id"));
