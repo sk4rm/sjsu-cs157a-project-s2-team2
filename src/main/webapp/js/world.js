@@ -24,19 +24,38 @@ function openInspector(obj) {
         deleteBtn.style.display = 'none';
     }
 
+    hideDeleteConfirm();
     document.getElementById('inspector').classList.add('show');
 }
 
 function closeInspector() {
     document.getElementById('inspector').classList.remove('show');
     selectedObjectId = null;
+    hideDeleteConfirm();
+}
+
+// native confirm() can pause the camera MediaStreamTrack on iOS Safari
+// (same family of bug as XR view). use inline two-step instead.
+function hideDeleteConfirm() {
+    const conf = document.getElementById('inspector-confirm');
+    if (conf) conf.style.display = 'none';
 }
 
 function onDeleteClicked() {
     if (!selectedObjectId) return;
-    if (!confirm('Are you sure you want to delete this object?')) return;
+    document.getElementById('inspector-delete').style.display = 'none';
+    document.getElementById('inspector-confirm').style.display = 'flex';
+}
 
+function onDeleteCancelled() {
+    document.getElementById('inspector-confirm').style.display = 'none';
+    document.getElementById('inspector-delete').style.display = 'block';
+}
+
+function onDeleteConfirmed() {
+    if (!selectedObjectId) return;
     const id = selectedObjectId;
+    document.getElementById('inspector-confirm').style.display = 'none';
     fetch(API_URL + '/' + id, {
         method: 'DELETE', credentials: 'same-origin'
     }).then(function (resp) {
@@ -48,10 +67,12 @@ function onDeleteClicked() {
         } else {
             return readApiError(resp).then(function (msg) {
                 showMessage('Delete failed: ' + msg, true);
+                onDeleteCancelled();
             });
         }
     }).catch(function (err) {
         showMessage('Network error on delete', true);
+        onDeleteCancelled();
     });
 }
 
