@@ -307,7 +307,10 @@
 
 <div class="hud-top">
     <a href="<%= request.getContextPath() %>/" class="hud-btn">← Exit World</a>
-    <button type="button" class="hud-btn" onclick="placeWorldSpaceTestCube()" title="dev: green cube on the ring, not glued to camera">
+    <a href="<%= request.getContextPath() %>/world-xr" class="hud-btn"
+       title="alternate: 8th Wall SLAM tracking (better on iPhone, needs static/xr setup)">XR mode</a>
+    <button type="button" class="hud-btn" onclick="placeWorldSpaceTestCube()"
+            title="dev: green cube on the ring, not glued to camera">
         test world cube
     </button>
     <div class="status">
@@ -317,16 +320,20 @@
 </div>
 
 <div id="loc-prompt" class="loc-prompt" role="dialog" aria-label="location permission">
-    <p id="loc-prompt-text">warp uses your gps to place cubes and signposts. if you already tapped allow in settings, we try to pick up coords automatically — or use the buttons below.</p>
-    <button type="button" class="loc-allow-btn" onclick="requestLocationPermission()">ask for location / refresh gps</button>
+    <p id="loc-prompt-text">warp uses your gps to place cubes and signposts. if you already tapped allow in settings, we
+        try to pick up coords automatically — or use the buttons below.</p>
+    <button type="button" class="loc-allow-btn" onclick="requestLocationPermission()">ask for location / refresh gps
+    </button>
     <button type="button" class="secondary" onclick="dismissLocPrompt()">hide this bar</button>
 </div>
 
 <a-scene vr-mode-ui="enabled: false" embedded
-         arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; antialias: true; alpha: true"
+         arjs="sourceType: webcam; debugUIEnabled: false; antialias: true; alpha: true"
          renderer="antialias: true; alpha: true">
 
-    <a-camera gps-camera rotation-reader></a-camera>
+    <a-camera gps-camera="gpsMinDistance: 0.5; positionMinAccuracy: 20; minDistance: 0.1; gpsTimeInterval: 500"
+              gps-smoother="durationMs: 300"
+              rotation-reader></a-camera>
 </a-scene>
 
 <div class="hud-bottom">
@@ -354,9 +361,45 @@
 <script>
     const API_URL = '<%= request.getContextPath() %>/api/objects';
     let currentPosition = null;
+    let lastGpsAccuracy = null;
     let placeMode = 'cube';
     // gps = post lat/lng, world = drop where the ring is (scene root)
     let placeSpace = 'gps';
+
+    // smooth the camera between AR.js GPS fixes — without this the scene
+    // snaps every ~1s when watchPosition delivers a new sample.
+    if (window.AFRAME && !AFRAME.components['gps-smoother']) {
+        AFRAME.registerComponent('gps-smoother', {
+            schema: { durationMs: { default: 300 } },
+            init: function () {
+                this.target = new THREE.Vector3();
+                this.displayed = new THREE.Vector3();
+                this.haveTarget = false;
+                var self = this;
+                this._onFix = function () {
+                    // wait one tick so AR.js has applied the new camera pos
+                    setTimeout(function () {
+                        self.target.copy(self.el.object3D.position);
+                        if (!self.haveTarget) {
+                            self.displayed.copy(self.target);
+                            self.haveTarget = true;
+                        }
+                    }, 0);
+                };
+                window.addEventListener('gps-camera-update-position', this._onFix);
+            },
+            remove: function () {
+                window.removeEventListener('gps-camera-update-position', this._onFix);
+            },
+            tick: function (time, dt) {
+                if (!this.haveTarget) return;
+                var dur = this.data.durationMs || 300;
+                var alpha = Math.min(1, dt / dur);
+                this.displayed.lerp(this.target, alpha);
+                this.el.object3D.position.copy(this.displayed);
+            }
+        });
+    }
 
     function setPlaceMode(mode) {
         placeMode = mode;
@@ -469,10 +512,11 @@
             });
             if (n > 0) console.log('[ARP] restored', n, 'world placements from localStorage');
         }
+
         if (scene.hasLoaded) {
             run();
         } else {
-            scene.addEventListener('loaded', run, { once: true });
+            scene.addEventListener('loaded', run, {once: true});
         }
     }
 
@@ -506,7 +550,7 @@
             wy = origin.y + dir.y * dist;
             wz = origin.z + dir.z * dist;
         }
-        return { x: wx, y: wy, z: wz, usedPlane: usedPlane };
+        return {x: wx, y: wy, z: wz, usedPlane: usedPlane};
     }
 
     var placementReticleRaf = null;
@@ -539,6 +583,7 @@
             }
             placementReticleRaf = window.requestAnimationFrame(tick);
         }
+
         function begin() {
             ensurePlacementReticle(scene);
             if (placementReticleRaf) {
@@ -546,10 +591,11 @@
             }
             placementReticleRaf = window.requestAnimationFrame(tick);
         }
+
         if (scene.hasLoaded) {
             begin();
         } else {
-            scene.addEventListener('loaded', begin, { once: true });
+            scene.addEventListener('loaded', begin, {once: true});
         }
     }
 
@@ -598,7 +644,7 @@
         if (scene.hasLoaded) {
             run();
         } else {
-            scene.addEventListener('loaded', run, { once: true });
+            scene.addEventListener('loaded', run, {once: true});
         }
     }
 
@@ -618,9 +664,10 @@
                 function offlineDrop() {
                     var id = 'world-placed-' + Date.now();
                     spawnWorldCubeEntity(scene, id, wx, wy, wz);
-                    appendWorldPlacementSession({ kind: 'cube', id: id, x: wx, y: wy, z: wz, savedAt: Date.now() });
+                    appendWorldPlacementSession({kind: 'cube', id: id, x: wx, y: wy, z: wz, savedAt: Date.now()});
                     showMessage('no gps / server — saved local only', true);
                 }
+
                 if (lat == null || lng == null) {
                     offlineDrop();
                     return;
@@ -647,7 +694,7 @@
         if (scene.hasLoaded) {
             run();
         } else {
-            scene.addEventListener('loaded', run, { once: true });
+            scene.addEventListener('loaded', run, {once: true});
         }
     }
 
@@ -692,9 +739,18 @@
                 function offlineDrop() {
                     var id = 'world-signpost-' + Date.now();
                     spawnWorldSignpostEntity(scene, id, wx, wy, wz, msg);
-                    appendWorldPlacementSession({ kind: 'signpost', id: id, x: wx, y: wy, z: wz, content: msg, savedAt: Date.now() });
+                    appendWorldPlacementSession({
+                        kind: 'signpost',
+                        id: id,
+                        x: wx,
+                        y: wy,
+                        z: wz,
+                        content: msg,
+                        savedAt: Date.now()
+                    });
                     showMessage('no gps / server — saved local only', true);
                 }
+
                 if (lat == null || lng == null) {
                     offlineDrop();
                     return;
@@ -721,7 +777,7 @@
         if (scene.hasLoaded) {
             run();
         } else {
-            scene.addEventListener('loaded', run, { once: true });
+            scene.addEventListener('loaded', run, {once: true});
         }
     }
 
@@ -757,30 +813,16 @@
         }
     }
 
-    // sneak a read if browser already said yes (works sometimes on safari lol)
-    function trySilentLocationRead() {
-        if (!navigator.geolocation) return;
-        navigator.geolocation.getCurrentPosition(
-            function (pos) {
-                currentPosition = {
-                    latitude: pos.coords.latitude,
-                    longitude: pos.coords.longitude
-                };
-                var el = document.getElementById('status-location');
-                if (el) {
-                    el.innerHTML = '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
-                }
-                dismissLocPrompt();
-            },
-            function () { /* blocked / need tap, leave banner */ },
-            { enableHighAccuracy: false, timeout: 15000, maximumAge: 300000 }
-        );
-    }
-
     // ios wants a real button press before the location popup
     function requestLocationPermission() {
         var box = document.getElementById('loc-prompt');
         if (box) box.classList.remove('denied');
+        // ios safari ≥13: orientation events are gated behind a user-gesture permission
+        if (typeof DeviceOrientationEvent !== 'undefined' &&
+            typeof DeviceOrientationEvent.requestPermission === 'function') {
+            DeviceOrientationEvent.requestPermission().catch(function () {
+            });
+        }
         if (!navigator.geolocation) {
             var t0 = document.getElementById('loc-prompt-text');
             if (t0) t0.innerText = 'this browser does not support geolocation.';
@@ -809,7 +851,7 @@
                     t.innerText = geoFailMessage(err);
                 }
             },
-            { enableHighAccuracy: true, timeout: 25000, maximumAge: 10000 }
+            {enableHighAccuracy: true, timeout: 25000, maximumAge: 10000}
         );
     }
 
@@ -829,7 +871,7 @@
         fetch(API_URL, {
             method: 'POST',
             credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: formData
         })
             .then(function (response) {
@@ -867,61 +909,127 @@
         return fetch(API_URL, {
             method: 'POST',
             credentials: 'same-origin',
-            headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
             body: formData
         });
     }
 
-    function resolveLatLngThen(callback) {
-        if (currentPosition && typeof currentPosition.latitude === 'number') {
-            callback(currentPosition.latitude, currentPosition.longitude);
-            return;
-        }
+    // placement-time gps: never trust a cached fix, never accept a coarse one
+    const PLACEMENT_ACCURACY_GATE_M = 20;   // reject fixes worse than this
+    const PLACEMENT_SAMPLE_WINDOW_MS = 4000; // watchPosition burst length
+    const PLACEMENT_EARLY_EXIT_M = 8;        // settle immediately on a fix this good
+    const PLACEMENT_HARD_TIMEOUT_MS = 25000;
+
+    // runs a short watchPosition burst and picks the most-accurate sample.
+    // ok(lat, lng, accM) on a fix within the gate; fail(reason, bestSeenAccM) otherwise.
+    function acquireBestFix(ok, fail) {
         if (!navigator.geolocation) {
-            callback(null, null);
+            fail('no-geo', null);
             return;
         }
-        navigator.geolocation.getCurrentPosition(
-            function (pos) {
-                callback(pos.coords.latitude, pos.coords.longitude);
+        let best = null;
+        let watchId = null;
+        let settled = false;
+        let windowTimer = null;
+
+        function clearWatch() {
+            if (watchId != null) {
+                try {
+                    navigator.geolocation.clearWatch(watchId);
+                } catch (e) {
+                }
+                watchId = null;
+            }
+            if (windowTimer != null) {
+                clearTimeout(windowTimer);
+                windowTimer = null;
+            }
+        }
+
+        function settle() {
+            if (settled) return;
+            settled = true;
+            clearWatch();
+            if (!best) {
+                fail('no-fix', null);
+                return;
+            }
+            if (best.acc > PLACEMENT_ACCURACY_GATE_M) {
+                fail('weak', best.acc);
+                return;
+            }
+            currentPosition = {latitude: best.lat, longitude: best.lng};
+            var st = document.getElementById('status-location');
+            if (st) {
+                st.innerHTML = '<strong>GPS</strong>: ' + best.lat.toFixed(5) + ', ' + best.lng.toFixed(5) + ' (±' + Math.round(best.acc) + 'm)';
+            }
+            ok(best.lat, best.lng, best.acc);
+        }
+
+        try {
+            watchId = navigator.geolocation.watchPosition(
+                function (pos) {
+                    var acc = pos.coords.accuracy;
+                    if (best === null || acc < best.acc) {
+                        best = {lat: pos.coords.latitude, lng: pos.coords.longitude, acc: acc};
+                    }
+                    if (acc <= PLACEMENT_EARLY_EXIT_M) settle();
+                },
+                function (err) {
+                    // surface only if we never got a single sample
+                    if (!best && (err.code === 1 || err.code === 2)) {
+                        if (settled) return;
+                        settled = true;
+                        clearWatch();
+                        fail(err.code === 1 ? 'denied' : 'unavailable', null);
+                    }
+                },
+                {enableHighAccuracy: true, timeout: PLACEMENT_HARD_TIMEOUT_MS, maximumAge: 0}
+            );
+        } catch (e) {
+            fail('exception', null);
+            return;
+        }
+
+        windowTimer = setTimeout(settle, PLACEMENT_SAMPLE_WINDOW_MS);
+    }
+
+    function gpsFailToast(reason, bestAcc) {
+        if (reason === 'weak' && bestAcc != null) {
+            showMessage('gps too weak (±' + Math.round(bestAcc) + 'm). step outside or wait, then retry', true);
+        } else if (reason === 'denied') {
+            showMessage('location was blocked. enable it in settings, then reload', true);
+        } else if (reason === 'no-geo') {
+            showMessage('this browser has no geolocation', true);
+        } else if (reason === 'no-fix') {
+            showMessage('no gps fix yet. step outside or wait, then retry', true);
+        } else {
+            showMessage('gps unavailable. try again outdoors', true);
+        }
+    }
+
+    function resolveLatLngThen(callback) {
+        acquireBestFix(
+            function (lat, lng) {
+                callback(lat, lng);
             },
-            function () {
+            function (reason, bestAcc) {
+                gpsFailToast(reason, bestAcc);
                 callback(null, null);
-            },
-            { enableHighAccuracy: true, timeout: 12000, maximumAge: 10000 }
+            }
         );
     }
 
     // same tap as + helps gps on iphone
     function placeAtGps() {
-        if (currentPosition && typeof currentPosition.latitude === 'number') {
-            submitPlace(currentPosition.latitude, currentPosition.longitude);
-            return;
-        }
-        if (!navigator.geolocation) {
-            showMessage('this browser has no geolocation', true);
-            return;
-        }
-        navigator.geolocation.getCurrentPosition(
-            function (pos) {
-                submitPlace(pos.coords.latitude, pos.coords.longitude);
+        showMessage('locking gps…');
+        acquireBestFix(
+            function (lat, lng) {
+                submitPlace(lat, lng);
             },
-            function (err) {
-                if (err.code === 3 || err.code === 2) {
-                    navigator.geolocation.getCurrentPosition(
-                        function (pos2) {
-                            submitPlace(pos2.coords.latitude, pos2.coords.longitude);
-                        },
-                        function () {
-                            showMessage(geoFailMessage(err), true);
-                        },
-                        { enableHighAccuracy: false, timeout: 20000, maximumAge: 300000 }
-                    );
-                    return;
-                }
-                showMessage(geoFailMessage(err), true);
-            },
-            { enableHighAccuracy: true, timeout: 25000, maximumAge: 10000 }
+            function (reason, bestAcc) {
+                gpsFailToast(reason, bestAcc);
+            }
         );
     }
 
@@ -1030,6 +1138,7 @@
 
     function placeObjectsInScene(scene, list) {
         if (!scene) return;
+
         function run() {
             list.forEach(function (obj) {
                 if (document.getElementById('obj-' + obj.id)) return;
@@ -1046,10 +1155,11 @@
                 }
             });
         }
+
         if (scene.hasLoaded) {
             run();
         } else {
-            scene.addEventListener('loaded', run, { once: true });
+            scene.addEventListener('loaded', run, {once: true});
         }
     }
 
@@ -1063,12 +1173,9 @@
 
         loadingSub.innerText = "Starting camera...";
 
-        // chrome has permissions api, safari often doesnt
+        // surface "denied" state in the prompt; AR.js owns the actual GPS subscription
         if (navigator.permissions && navigator.permissions.query) {
-            navigator.permissions.query({ name: 'geolocation' }).then(function (r) {
-                if (r.state === 'granted') {
-                    trySilentLocationRead();
-                }
+            navigator.permissions.query({name: 'geolocation'}).then(function (r) {
                 if (r.state === 'denied') {
                     var box = document.getElementById('loc-prompt');
                     var t = document.getElementById('loc-prompt-text');
@@ -1077,15 +1184,9 @@
                         t.innerText = 'location is denied for this site. change it in browser settings, then reload.';
                     }
                 }
-                r.addEventListener('change', function () {
-                    if (r.state === 'granted') {
-                        trySilentLocationRead();
-                    }
-                });
-            }).catch(function () {});
+            }).catch(function () {
+            });
         }
-
-        setTimeout(trySilentLocationRead, 500);
 
         document.addEventListener('arjs-video-loaded', () => {
             hideLoading();
@@ -1096,6 +1197,7 @@
                 hideLoading();
                 startPlacementReticleLoop(scene);
             }
+
             if (scene.hasLoaded) {
                 onSceneReady();
             } else {
@@ -1113,28 +1215,22 @@
                 latitude: e.detail.position.latitude,
                 longitude: e.detail.position.longitude
             };
+            var acc = e.detail.position.accuracy;
+            lastGpsAccuracy = (typeof acc === 'number') ? acc : null;
+            console.log('[gps]', e.detail.position.latitude.toFixed(6),
+                e.detail.position.longitude.toFixed(6),
+                'acc=', acc);
+            var accLabel = (lastGpsAccuracy != null) ? ' (±' + Math.round(lastGpsAccuracy) + 'm)' : '';
+            var quality = '';
+            if (lastGpsAccuracy != null) {
+                if (lastGpsAccuracy <= 10) quality = ' · good';
+                else if (lastGpsAccuracy <= 20) quality = ' · ok';
+                else quality = ' · weak';
+            }
             document.getElementById('status-location').innerHTML =
-                '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
+                '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5) + accLabel + quality;
             maybeHideLocPrompt();
         });
-
-        if (navigator.geolocation) {
-            navigator.geolocation.watchPosition(
-                function (pos) {
-                    currentPosition = {
-                        latitude: pos.coords.latitude,
-                        longitude: pos.coords.longitude
-                    };
-                    var el = document.getElementById('status-location');
-                    if (el) {
-                        el.innerHTML = '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
-                    }
-                    maybeHideLocPrompt();
-                },
-                function () { /* gps fail quiet — user can hit allow or + */ },
-                { enableHighAccuracy: true, maximumAge: 5000, timeout: 60000 }
-            );
-        }
 
         window.addEventListener('orientationchange', () => {
             setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
@@ -1192,7 +1288,7 @@
         const statusObj = document.getElementById('status-objects');
         if (!scene) return;
         try {
-            const response = await fetch(API_URL, { credentials: 'same-origin' });
+            const response = await fetch(API_URL, {credentials: 'same-origin'});
             if (!response.ok) {
                 showMessage('could not load objects: ' + await readApiError(response), true);
                 restoreWorldPlacementsFromSession(scene);
