@@ -49,4 +49,14 @@ public class LayerDao {
         }
         throw new SQLException("Failed to create layer, no ID returned.");
     }
+
+    public boolean rename(long layerId, String name) throws SQLException {
+        String sql = "UPDATE layers SET name = ? WHERE layer_id = ?";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setString(1, name);
+            ps.setLong(2, layerId);
+            return ps.executeUpdate() > 0;
+        }
+    }
 }

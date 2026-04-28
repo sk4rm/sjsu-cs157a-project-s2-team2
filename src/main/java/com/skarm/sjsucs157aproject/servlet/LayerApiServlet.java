@@ -15,8 +15,17 @@ import java.io.IOException;
 import java.sql.SQLException;
 import java.util.List;
 
-@WebServlet(name = "layerApiServlet", urlPatterns = {"/api/layers"})
+@WebServlet(name = "layerApiServlet", urlPatterns = {"/api/layers", "/api/layers/*"})
 public class LayerApiServlet extends HttpServlet {
+    @Override
+    protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        if ("PATCH".equalsIgnoreCase(req.getMethod())) {
+            doPatch(req, resp);
+            return;
+        }
+        super.service(req, resp);
+    }
+
 
     private final LayerDao layerDao = new LayerDao();
 
@@ -78,6 +87,47 @@ public class LayerApiServlet extends HttpServlet {
         }
     }
 
+    protected void doPatch(HttpServletRequest req, HttpServletResponse resp) throws IOException {
+        if (!isAuthenticated(req, resp)) {
+            return;
+        }
+
+        Long layerId = parseIdFromPath(req);
+        if (layerId == null) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing layer id");
+            return;
+        }
+
+        String rawName = req.getParameter("name");
+        String name = rawName == null ? "" : rawName.trim();
+        if (name.isEmpty()) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing layer name");
+            return;
+        }
+        if (name.length() > 45) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Layer name too long");
+            return;
+        }
+
+        resp.setContentType("application/json");
+        try {
+            boolean updated = layerDao.rename(layerId, name);
+            if (!updated) {
+                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Layer not found");
+                return;
+            }
+
+            resp.getWriter().write(Json.createObjectBuilder()
+                    .add("layerId", layerId)
+                    .add("name", name)
+                    .build()
+                    .toString());
+        } catch (SQLException e) {
+            getServletContext().log("PATCH /api/layers failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+        }
+    }
+
     private boolean isAuthenticated(HttpServletRequest req, HttpServletResponse resp) throws IOException {
         HttpSession session = req.getSession(false);
         if (session == null || session.getAttribute("userId") == null) {
@@ -85,6 +135,18 @@ public class LayerApiServlet extends HttpServlet {
             return false;
         }
         return true;
+    }
+
+    private Long parseIdFromPath(HttpServletRequest req) {
+        String pathInfo = req.getPathInfo();
+        if (pathInfo == null || pathInfo.length() <= 1) {
+            return null;
+        }
+        try {
+            return Long.parseLong(pathInfo.substring(1));
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private void sendError(HttpServletResponse resp, int status, String message) throws IOException {
