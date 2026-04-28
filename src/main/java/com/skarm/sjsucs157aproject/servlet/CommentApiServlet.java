@@ -7,17 +7,16 @@ import jakarta.json.Json;
 import jakarta.json.JsonArrayBuilder;
 import jakarta.json.JsonObjectBuilder;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.sql.SQLException;
 import java.util.List;
 
-@WebServlet(name = "commentApiServlet", urlPatterns = {"/api/comments", "/api/comments/*"})
 public class CommentApiServlet extends HttpServlet {
 
     private final CommentDao commentDao = new CommentDao();
@@ -82,6 +81,12 @@ public class CommentApiServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        try {
+            req.setCharacterEncoding("UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new ServletException(e);
+        }
+
         Long userId = requireAuth(req, resp);
         if (userId == null) {
             return;

@@ -9,7 +9,49 @@
 
     function readErr(resp) {
         return resp.text().then(function (t) {
-            return t.slice(0, 120) || resp.statusText;
+            if (resp.status === 405) {
+                return 'POST blocked or wrong URL (got 405). Hard-refresh; ensure you are on the latest deploy.';
+            }
+            var slice = (t && t.trim()) ? t.trim().slice(0, 200) : '';
+            try {
+                var j = JSON.parse(t);
+                if (j && typeof j.error === 'string') return j.error;
+            } catch (ignore) {}
+            if (/^<html/i.test(slice)) {
+                return 'server returned HTML (status ' + resp.status + ') — check API URL / deploy.';
+            }
+            return slice || resp.statusText;
+        });
+    }
+
+    /**
+     * Never pass an empty string to fetch(): it resolves to the current page URL (e.g. /world-xr),
+     * which is GET-only → Jetty 405 "POST is not supported by this URL".
+     */
+    function absApiUrl(pathOrAbsolute) {
+        var s = pathOrAbsolute == null ? '' : String(pathOrAbsolute).trim();
+        if (!s) {
+            throw new Error('missing comments/votes API URL — reload the page');
+        }
+        if (/^https?:\/\//i.test(s)) {
+            return s;
+        }
+        try {
+            return new URL(s, window.location.origin).href;
+        } catch (e) {
+            throw new Error('bad API URL: ' + s);
+        }
+    }
+
+    function formPost(url, fields) {
+        var fd = new URLSearchParams();
+        Object.keys(fields).forEach(function (k) {
+            fd.append(k, fields[k]);
+        });
+        return fetch(absApiUrl(url), {
+            method: 'POST',
+            credentials: 'same-origin',
+            body: fd
         });
     }
 
@@ -24,7 +66,9 @@
         var el = document.getElementById('inspector-social');
         if (!el) return null;
         var W = window.WARP;
-        if (!W || !W.commentsUrl || !W.votesUrl) {
+        var cU = W && W.commentsUrl != null ? String(W.commentsUrl).trim() : '';
+        var vU = W && W.votesUrl != null ? String(W.votesUrl).trim() : '';
+        if (!W || !cU || !vU) {
             el.innerHTML = '';
             return null;
         }
@@ -112,9 +156,16 @@
     }
 
     function reloadBoth(objectId) {
-        var W = window.WARP;
-        var vUrl = W.votesUrl + '?objectId=' + encodeURIComponent(objectId);
-        var cUrl = W.commentsUrl + '?objectId=' + encodeURIComponent(objectId);
+        var vUrl;
+        var cUrl;
+        try {
+            var W = window.WARP;
+            vUrl = absApiUrl(W.votesUrl) + '?objectId=' + encodeURIComponent(objectId);
+            cUrl = absApiUrl(W.commentsUrl) + '?objectId=' + encodeURIComponent(objectId);
+        } catch (e) {
+            notify(String(e.message || e), true);
+            return Promise.resolve();
+        }
         return Promise.all([
             fetch(vUrl, {credentials: 'same-origin'}).then(function (r) {
                 if (!r.ok) return readErr(r).then(function (e) { throw new Error(e); });
@@ -143,16 +194,14 @@
         var list = document.getElementById('soc-list');
 
         function vote(type) {
-            fetch(W.votesUrl, {
-                method: 'POST',
-                credentials: 'same-origin',
-                headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                body:
-                    'objectId=' +
-                    encodeURIComponent(objectId) +
-                    '&type=' +
-                    encodeURIComponent(String(type))
-            })
+            var req;
+            try {
+                req = formPost(W.votesUrl, {objectId: String(objectId), type: String(type)});
+            } catch (e) {
+                notify(String(e.message || e), true);
+                return;
+            }
+            req
                 .then(function (r) {
                     if (!r.ok) return readErr(r).then(function (t) { throw new Error(t); });
                     return r.json();
@@ -164,7 +213,14 @@
         }
 
         function clearVote() {
-            fetch(W.votesUrl + '?objectId=' + encodeURIComponent(objectId), {
+            var delUrl;
+            try {
+                delUrl = absApiUrl(W.votesUrl) + '?objectId=' + encodeURIComponent(objectId);
+            } catch (e) {
+                notify(String(e.message || e), true);
+                return;
+            }
+            fetch(delUrl, {
                 method: 'DELETE',
                 credentials: 'same-origin'
             })
@@ -190,26 +246,30 @@
                     notify('comment text required', true);
                     return;
                 }
-                fetch(W.commentsUrl, {
-                    method: 'POST',
-                    credentials: 'same-origin',
-                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-                    body:
-                        'objectId=' +
-                        encodeURIComponent(objectId) +
-                        '&text=' +
-                        encodeURIComponent(text)
-                })
+                var postReq;
+                try {
+                    postReq = formPost(W.commentsUrl, {objectId: String(objectId), text: text});
+                } catch (e) {
+                    notify(String(e.message || e), true);
+                    return;
+                }
+                postReq
                     .then(function (r) {
                         if (!r.ok) return readErr(r).then(function (t) { throw new Error(t); });
                         return r.json();
                     })
                     .then(function () {
                         if (ta) ta.value = '';
-                        return fetch(
-                            W.commentsUrl + '?objectId=' + encodeURIComponent(objectId),
-                            {credentials: 'same-origin'}
-                        ).then(function (r2) {
+                        var listUrl;
+                        try {
+                            listUrl =
+                                absApiUrl(W.commentsUrl) +
+                                '?objectId=' +
+                                encodeURIComponent(objectId);
+                        } catch (e2) {
+                            return Promise.reject(e2);
+                        }
+                        return fetch(listUrl, {credentials: 'same-origin'}).then(function (r2) {
                             if (!r2.ok) return readErr(r2).then(function (t) { throw new Error(t); });
                             return r2.json();
                         });
@@ -227,7 +287,14 @@
                 if (!t.classList.contains('soc-del')) return;
                 var cid = t.getAttribute('data-id');
                 if (!cid) return;
-                fetch(W.commentsUrl + '/' + cid, {method: 'DELETE', credentials: 'same-origin'})
+                var delCommentUrl;
+                try {
+                    delCommentUrl = absApiUrl(W.commentsUrl) + '/' + cid;
+                } catch (e) {
+                    notify(String(e.message || e), true);
+                    return;
+                }
+                fetch(delCommentUrl, {method: 'DELETE', credentials: 'same-origin'})
                     .then(function (r) {
                         if (r.status === 204) {
                             reloadBoth(objectId);

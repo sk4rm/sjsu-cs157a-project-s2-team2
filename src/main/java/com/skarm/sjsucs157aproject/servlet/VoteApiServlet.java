@@ -4,16 +4,15 @@ import com.skarm.sjsucs157aproject.dao.VirtualObjectDao;
 import com.skarm.sjsucs157aproject.dao.VoteDao;
 import jakarta.json.Json;
 import jakarta.servlet.ServletException;
-import jakarta.servlet.annotation.WebServlet;
 import jakarta.servlet.http.HttpServlet;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.servlet.http.HttpSession;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.sql.SQLException;
 
-@WebServlet(name = "voteApiServlet", urlPatterns = {"/api/votes"})
 public class VoteApiServlet extends HttpServlet {
 
     private final VoteDao voteDao = new VoteDao();
@@ -57,6 +56,12 @@ public class VoteApiServlet extends HttpServlet {
 
     @Override
     protected void doPost(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
+        try {
+            req.setCharacterEncoding("UTF-8");
+        } catch (UnsupportedEncodingException e) {
+            throw new ServletException(e);
+        }
+
         HttpSession session = req.getSession(false);
         if (session == null || session.getAttribute("userId") == null) {
             sendError(resp, HttpServletResponse.SC_UNAUTHORIZED, "not logged in");

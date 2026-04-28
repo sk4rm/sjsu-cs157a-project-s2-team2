@@ -248,7 +248,7 @@ video {
 
 .inspector {
     position: fixed;
-    bottom: 120px;
+    bottom: max(118px, calc(env(safe-area-inset-bottom, 0px) + 100px));
     left: 50%;
     transform: translateX(-50%);
     width: min(300px, 90vw);
@@ -257,11 +257,20 @@ video {
     border: 1px solid rgba(255, 255, 255, 0.2);
     border-radius: 16px;
     padding: 16px;
-    z-index: 20;
+    /* Above HUD/canvas; below loading (100) and landscape blocker (200). */
+    z-index: 50;
     display: none;
     flex-direction: column;
     gap: 12px;
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    /* body/html use overflow:hidden — tall panels were clipped above the fold.
+       Keep the whole inspector (including votes + comments) scrollable inside the viewport. */
+    max-height: min(72vh, calc(100dvh - env(safe-area-inset-top, 0px) - env(safe-area-inset-bottom, 0px) - 200px));
+    overflow-x: hidden;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
+    pointer-events: auto;
 }
 
 .inspector.show {
@@ -303,8 +312,12 @@ video {
     border-top: 1px solid rgba(255, 255, 255, 0.08);
     padding-top: 10px;
     margin-top: 4px;
-    max-height: 42vh;
+    flex: 0 1 auto;
+    min-height: 0;
+    max-height: min(36vh, 280px);
     overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    overscroll-behavior: contain;
 }
 
 .soc-votes-row {

@@ -27,4 +27,27 @@
         <url-pattern>/login</url-pattern>
     </servlet-mapping>
 
+    <!-- Declared here so POST always maps (some deployments are flaky with @WebServlet only). -->
+    <servlet>
+        <servlet-name>commentApiServlet</servlet-name>
+        <servlet-class>com.skarm.sjsucs157aproject.servlet.CommentApiServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>commentApiServlet</servlet-name>
+        <url-pattern>/api/comments</url-pattern>
+    </servlet-mapping>
+    <servlet-mapping>
+        <servlet-name>commentApiServlet</servlet-name>
+        <url-pattern>/api/comments/*</url-pattern>
+    </servlet-mapping>
+
+    <servlet>
+        <servlet-name>voteApiServlet</servlet-name>
+        <servlet-class>com.skarm.sjsucs157aproject.servlet.VoteApiServlet</servlet-class>
+    </servlet>
+    <servlet-mapping>
+        <servlet-name>voteApiServlet</servlet-name>
+        <url-pattern>/api/votes</url-pattern>
+    </servlet-mapping>
+
 </web-app>
