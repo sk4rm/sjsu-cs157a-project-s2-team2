@@ -15,7 +15,8 @@
     <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
 </head>
 
-<body>
+<body data-warp-comments="<%= request.getContextPath() %>/api/comments"
+      data-warp-votes="<%= request.getContextPath() %>/api/votes">
 
 <div id="loading" class="loading-overlay">
     <div id="loading-text" style="margin-bottom: 20px; font-size: 1.2rem;">Initializing WARP Engine...</div>
@@ -113,8 +114,16 @@
         votesUrl: '<%= request.getContextPath() %>/api/votes',
         userId: <%= (Long) session.getAttribute("userId") %>
     };
+    (function () {
+        var b = document.body;
+        if (!b || !window.WARP) return;
+        var c = b.getAttribute('data-warp-comments');
+        var v = b.getAttribute('data-warp-votes');
+        if (c) window.WARP.commentsUrl = c;
+        if (v) window.WARP.votesUrl = v;
+    })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js"></script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=ar2"></script>
 <script src="<%= request.getContextPath() %>/js/world.js"></script>
 
 </body>

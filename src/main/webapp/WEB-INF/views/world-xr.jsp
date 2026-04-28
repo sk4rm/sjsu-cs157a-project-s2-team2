@@ -40,7 +40,8 @@
             data-preload-chunks="slam"></script>
 </head>
 
-<body>
+<body data-warp-comments="<%= request.getContextPath() %>/api/comments"
+      data-warp-votes="<%= request.getContextPath() %>/api/votes">
 
 <div id="loading" class="loading-overlay">
     <div style="margin-bottom: 16px; font-size: 1.15rem;">Starting XR engine…</div>
@@ -150,8 +151,16 @@
         votesUrl: '<%= request.getContextPath() %>/api/votes',
         userId: <%= (Long) session.getAttribute("userId") %>
     };
+    (function () {
+        var b = document.body;
+        if (!b || !window.WARP) return;
+        var c = b.getAttribute('data-warp-comments');
+        var v = b.getAttribute('data-warp-votes');
+        if (c) window.WARP.commentsUrl = c;
+        if (v) window.WARP.votesUrl = v;
+    })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js"></script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=xr2"></script>
 <script src="<%= request.getContextPath() %>/js/world-xr.js"></script>
 </body>
 </html>

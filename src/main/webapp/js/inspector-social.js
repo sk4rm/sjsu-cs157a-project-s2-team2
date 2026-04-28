@@ -24,6 +24,23 @@
         });
     }
 
+    /** Prefer server-rendered body attributes (XR page / cached WARP can't strip these). */
+    function getCommentsUrl() {
+        var b = document.body;
+        var fromBody = b && b.getAttribute('data-warp-comments');
+        var w = window.WARP && window.WARP.commentsUrl;
+        var s = (fromBody && String(fromBody).trim()) || (w != null ? String(w).trim() : '');
+        return s;
+    }
+
+    function getVotesUrl() {
+        var b = document.body;
+        var fromBody = b && b.getAttribute('data-warp-votes');
+        var w = window.WARP && window.WARP.votesUrl;
+        var s = (fromBody && String(fromBody).trim()) || (w != null ? String(w).trim() : '');
+        return s;
+    }
+
     /**
      * Never pass an empty string to fetch(): it resolves to the current page URL (e.g. /world-xr),
      * which is GET-only → Jetty 405 "POST is not supported by this URL".
@@ -50,6 +67,7 @@
         });
         return fetch(absApiUrl(url), {
             method: 'POST',
+            mode: 'same-origin',
             credentials: 'same-origin',
             body: fd
         });
@@ -66,8 +84,8 @@
         var el = document.getElementById('inspector-social');
         if (!el) return null;
         var W = window.WARP;
-        var cU = W && W.commentsUrl != null ? String(W.commentsUrl).trim() : '';
-        var vU = W && W.votesUrl != null ? String(W.votesUrl).trim() : '';
+        var cU = getCommentsUrl();
+        var vU = getVotesUrl();
         if (!W || !cU || !vU) {
             el.innerHTML = '';
             return null;
@@ -159,19 +177,18 @@
         var vUrl;
         var cUrl;
         try {
-            var W = window.WARP;
-            vUrl = absApiUrl(W.votesUrl) + '?objectId=' + encodeURIComponent(objectId);
-            cUrl = absApiUrl(W.commentsUrl) + '?objectId=' + encodeURIComponent(objectId);
+            vUrl = absApiUrl(getVotesUrl()) + '?objectId=' + encodeURIComponent(objectId);
+            cUrl = absApiUrl(getCommentsUrl()) + '?objectId=' + encodeURIComponent(objectId);
         } catch (e) {
             notify(String(e.message || e), true);
             return Promise.resolve();
         }
         return Promise.all([
-            fetch(vUrl, {credentials: 'same-origin'}).then(function (r) {
+            fetch(vUrl, {mode: 'same-origin', credentials: 'same-origin'}).then(function (r) {
                 if (!r.ok) return readErr(r).then(function (e) { throw new Error(e); });
                 return r.json();
             }),
-            fetch(cUrl, {credentials: 'same-origin'}).then(function (r) {
+            fetch(cUrl, {mode: 'same-origin', credentials: 'same-origin'}).then(function (r) {
                 if (!r.ok) return readErr(r).then(function (e) { throw new Error(e); });
                 return r.json();
             })
@@ -186,7 +203,6 @@
     }
 
     function bindSocialEvents(objectId) {
-        var W = window.WARP;
         var upBtn = document.getElementById('soc-up-btn');
         var downBtn = document.getElementById('soc-down-btn');
         var clearBtn = document.getElementById('soc-clear-btn');
@@ -196,7 +212,7 @@
         function vote(type) {
             var req;
             try {
-                req = formPost(W.votesUrl, {objectId: String(objectId), type: String(type)});
+                req = formPost(getVotesUrl(), {objectId: String(objectId), type: String(type)});
             } catch (e) {
                 notify(String(e.message || e), true);
                 return;
@@ -215,13 +231,14 @@
         function clearVote() {
             var delUrl;
             try {
-                delUrl = absApiUrl(W.votesUrl) + '?objectId=' + encodeURIComponent(objectId);
+                delUrl = absApiUrl(getVotesUrl()) + '?objectId=' + encodeURIComponent(objectId);
             } catch (e) {
                 notify(String(e.message || e), true);
                 return;
             }
             fetch(delUrl, {
                 method: 'DELETE',
+                mode: 'same-origin',
                 credentials: 'same-origin'
             })
                 .then(function (r) {
@@ -248,7 +265,7 @@
                 }
                 var postReq;
                 try {
-                    postReq = formPost(W.commentsUrl, {objectId: String(objectId), text: text});
+                    postReq = formPost(getCommentsUrl(), {objectId: String(objectId), text: text});
                 } catch (e) {
                     notify(String(e.message || e), true);
                     return;
@@ -263,13 +280,13 @@
                         var listUrl;
                         try {
                             listUrl =
-                                absApiUrl(W.commentsUrl) +
+                                absApiUrl(getCommentsUrl()) +
                                 '?objectId=' +
                                 encodeURIComponent(objectId);
                         } catch (e2) {
                             return Promise.reject(e2);
                         }
-                        return fetch(listUrl, {credentials: 'same-origin'}).then(function (r2) {
+                        return fetch(listUrl, {mode: 'same-origin', credentials: 'same-origin'}).then(function (r2) {
                             if (!r2.ok) return readErr(r2).then(function (t) { throw new Error(t); });
                             return r2.json();
                         });
@@ -289,12 +306,12 @@
                 if (!cid) return;
                 var delCommentUrl;
                 try {
-                    delCommentUrl = absApiUrl(W.commentsUrl) + '/' + cid;
+                    delCommentUrl = absApiUrl(getCommentsUrl()) + '/' + cid;
                 } catch (e) {
                     notify(String(e.message || e), true);
                     return;
                 }
-                fetch(delCommentUrl, {method: 'DELETE', credentials: 'same-origin'})
+                fetch(delCommentUrl, {method: 'DELETE', mode: 'same-origin', credentials: 'same-origin'})
                     .then(function (r) {
                         if (r.status === 204) {
                             reloadBoth(objectId);
