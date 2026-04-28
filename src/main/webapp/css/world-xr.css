@@ -297,6 +297,114 @@ video {
     line-height: 1.4;
 }
 
+.inspector-social {
+    font-size: 0.8rem;
+    color: #ccc;
+    border-top: 1px solid rgba(255, 255, 255, 0.08);
+    padding-top: 10px;
+    margin-top: 4px;
+    max-height: 42vh;
+    overflow-y: auto;
+}
+
+.soc-votes-row {
+    margin-bottom: 6px;
+}
+
+.soc-yours-hint {
+    color: #9ab;
+    font-size: 0.78rem;
+}
+
+.soc-vote-btns {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.soc-btn {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    color: #eee;
+    border-radius: 8px;
+    padding: 6px 10px;
+    font-size: 0.8rem;
+    cursor: pointer;
+}
+
+.soc-btn:active {
+    background: rgba(255, 255, 255, 0.2);
+}
+
+.soc-comments-head {
+    font-weight: 600;
+    color: #d37f8f;
+    margin-bottom: 6px;
+    font-size: 0.82rem;
+}
+
+.soc-list {
+    list-style: none;
+    margin: 0 0 8px;
+    padding: 0;
+}
+
+.soc-item {
+    padding: 6px 0;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+    line-height: 1.35;
+}
+
+.soc-meta {
+    color: #888;
+    font-size: 0.72rem;
+}
+
+.soc-textpart {
+    word-break: break-word;
+}
+
+.soc-empty {
+    color: #666;
+    font-style: italic;
+    padding: 4px 0;
+}
+
+.soc-del {
+    float: right;
+    background: transparent;
+    border: none;
+    color: #ff8b8b;
+    cursor: pointer;
+    font-size: 1.1rem;
+    line-height: 1;
+    padding: 0 4px;
+}
+
+.soc-form-wrap {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.soc-textarea {
+    width: 100%;
+    box-sizing: border-box;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(0, 0, 0, 0.4);
+    color: #eee;
+    padding: 8px;
+    font-size: 0.8rem;
+    resize: vertical;
+    min-height: 44px;
+}
+
+.soc-post {
+    align-self: flex-start;
+}
+
 .delete-btn {
     background: #ff4d4d;
     color: white;

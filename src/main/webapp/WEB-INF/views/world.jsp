@@ -102,15 +102,19 @@
             <button type="button" class="delete-btn" style="flex:1; margin:0; background:#444;" onclick="onDeleteCancelled()">Cancel</button>
         </div>
     </div>
+    <div id="inspector-social" class="inspector-social"></div>
 </div>
 
 <script>
     window.WARP = {
         apiUrl: '<%= request.getContextPath() %>/api/objects',
         assetsUrl: '<%= request.getContextPath() %>/api/assets',
+        commentsUrl: '<%= request.getContextPath() %>/api/comments',
+        votesUrl: '<%= request.getContextPath() %>/api/votes',
         userId: <%= (Long) session.getAttribute("userId") %>
     };
 </script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js"></script>
 <script src="<%= request.getContextPath() %>/js/world.js"></script>
 
 </body>

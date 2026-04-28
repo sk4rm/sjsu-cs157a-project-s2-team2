@@ -56,12 +56,18 @@ function openInspector(obj) {
 
     hideDeleteConfirm();
     document.getElementById('inspector').classList.add('show');
+    if (typeof loadInspectorSocial === 'function') {
+        loadInspectorSocial(obj.id);
+    }
 }
 
 function closeInspector() {
     document.getElementById('inspector').classList.remove('show');
     selectedObjectId = null;
     hideDeleteConfirm();
+    if (typeof clearInspectorSocial === 'function') {
+        clearInspectorSocial();
+    }
 }
 
 // native confirm() can pause the camera MediaStreamTrack on iOS Safari

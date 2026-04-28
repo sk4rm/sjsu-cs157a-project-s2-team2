@@ -56,12 +56,18 @@ function openInspector(obj) {
 
     resetDeleteConfirm();
     document.getElementById('inspector').classList.add('show');
+    if (typeof loadInspectorSocial === 'function') {
+        loadInspectorSocial(obj.id);
+    }
 }
 
 function closeInspector() {
     document.getElementById('inspector').classList.remove('show');
     selectedObjectId = null;
     resetDeleteConfirm();
+    if (typeof clearInspectorSocial === 'function') {
+        clearInspectorSocial();
+    }
 }
 
 // native confirm() pauses iOS Safari's camera MediaStreamTrack, which kills
