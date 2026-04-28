@@ -38,4 +38,18 @@ for f in "${FILES[@]}"; do
   docker compose exec -T db mysql -uroot -pwarp_root_local < "$ROOT/schemas/$f"
 done
 
+# Fresh dumps already include ar_* on virtual_objects; older DBs might not. Apply migration only if missing.
+AR_COLS="$(
+  docker compose exec -T db mysql -uroot -pwarp_root_local -N -e \
+    "SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA='warp' AND TABLE_NAME='virtual_objects' AND COLUMN_NAME='ar_x'" \
+    2>/dev/null || echo 0
+)"
+AR_COLS="$(echo -n "${AR_COLS}" | tr -d '[:space:]')"
+if [[ "${AR_COLS:-0}" == "0" ]]; then
+  echo "Applying optional migration migration_add_ar_anchor.sql (virtual_objects missing ar_* columns) ..."
+  docker compose exec -T db mysql -uroot -pwarp_root_local < "$ROOT/schemas/migration_add_ar_anchor.sql"
+else
+  echo "Skipping migration_add_ar_anchor.sql (ar_x already present on virtual_objects)."
+fi
+
 echo "Done. You can register at http://localhost:8080/ (with mvn jetty:run)."

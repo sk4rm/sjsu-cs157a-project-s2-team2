@@ -1,9 +1,6 @@
--- Optional one-time migration for an *existing* warp DB that was created before AR anchor
--- columns existed on virtual_objects. Do NOT run this if your table already has ar_x, etc.
--- (fresh installs: use schemas/warp_virtual_objects.sql only.)
---
--- Example:
---   mysql -h 127.0.0.1 -u warp_user -p warp < schemas/migration_add_ar_anchor.sql
+-- Optional migration for warp DBs where virtual_objects has no ar_* columns yet.
+-- scripts/import-warp-schemas.sh runs this automatically only when ar_x is missing.
+-- Manual run (same condition): mysql ... warp < schemas/migration_add_ar_anchor.sql
 USE `warp`;
 
 ALTER TABLE `virtual_objects`
