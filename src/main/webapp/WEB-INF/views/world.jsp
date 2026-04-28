@@ -290,6 +290,72 @@
                 padding: 10px 11px;
                 gap: 8px;
             }
+
+            .inspector {
+                position: fixed;
+                bottom: 120px;
+                left: 50%;
+                transform: translateX(-50%);
+                width: min(300px, 90vw);
+                background: rgba(0, 0, 0, 0.85);
+                backdrop-filter: blur(10px);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+                border-radius: 16px;
+                padding: 16px;
+                z-index: 20;
+                display: none;
+                flex-direction: column;
+                gap: 12px;
+                box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+            }
+
+            .inspector.show {
+                display: flex;
+            }
+
+            .inspector-header {
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+                padding-bottom: 8px;
+            }
+
+            .inspector-title {
+                font-weight: 600;
+                font-size: 0.95rem;
+                color: #d37f8f;
+            }
+
+            .inspector-close {
+                background: none;
+                border: none;
+                color: #aaa;
+                font-size: 1.2rem;
+                cursor: pointer;
+                padding: 0 4px;
+            }
+
+            .inspector-body {
+                font-size: 0.85rem;
+                color: #eee;
+                line-height: 1.4;
+            }
+
+            .delete-btn {
+                background: #ff4d4d;
+                color: white;
+                border: none;
+                padding: 10px;
+                border-radius: 8px;
+                font-weight: 600;
+                cursor: pointer;
+                margin-top: 4px;
+            }
+
+            .delete-btn:active {
+                background: #cc0000;
+            }
         }
     </style>
 </head>
@@ -333,7 +399,9 @@
 
     <a-camera gps-camera="gpsMinDistance: 0.5; positionMinAccuracy: 20; minDistance: 0.1; gpsTimeInterval: 500"
               gps-smoother="durationMs: 300"
-              rotation-reader></a-camera>
+              rotation-reader>
+        <a-cursor color="#d37f8f" fuse="false" raycaster="objects: .clickable"></a-cursor>
+    </a-camera>
 </a-scene>
 
 <div class="hud-bottom">
@@ -358,8 +426,87 @@
     </div>
 </div>
 
+<div id="inspector" class="inspector">
+    <div class="inspector-header">
+        <span id="inspector-title" class="inspector-title">Object Details</span>
+        <button type="button" class="inspector-close" onclick="closeInspector()">×</button>
+    </div>
+    <div id="inspector-body" class="inspector-body">
+        Loading...
+    </div>
+    <button type="button" id="inspector-delete" class="delete-btn" style="display:none;" onclick="onDeleteClicked()">
+        Delete Object
+    </button>
+</div>
+
 <script>
     const API_URL = '<%= request.getContextPath() %>/api/objects';
+    const sessionUserId = <%= (Long) session.getAttribute("userId") %>;
+    let selectedObjectId = null;
+
+    function openInspector(obj) {
+        selectedObjectId = obj.id;
+        document.getElementById('inspector-title').innerText = obj.type === 'signpost' ? 'Signpost' : 'Prop';
+        
+        let bodyHtml = '<strong>ID:</strong> ' + obj.id + '<br>';
+        if (obj.type === 'signpost') {
+            bodyHtml += '<strong>Message:</strong> ' + (obj.content || '') + '<br>';
+        } else {
+            bodyHtml += '<strong>Hash:</strong> ' + (obj.fileHash || 'default') + '<br>';
+        }
+        bodyHtml += '<strong>Lat:</strong> ' + obj.latitude.toFixed(6) + '<br>';
+        bodyHtml += '<strong>Lng:</strong> ' + obj.longitude.toFixed(6);
+        
+        document.getElementById('inspector-body').innerHTML = bodyHtml;
+        
+        const deleteBtn = document.getElementById('inspector-delete');
+        if (obj.userId === sessionUserId) {
+            deleteBtn.style.display = 'block';
+        } else {
+            deleteBtn.style.display = 'none';
+        }
+        
+        document.getElementById('inspector').classList.add('show');
+    }
+
+    function closeInspector() {
+        document.getElementById('inspector').classList.remove('show');
+        selectedObjectId = null;
+    }
+
+    function onDeleteClicked() {
+        if (!selectedObjectId) return;
+        if (!confirm('Are you sure you want to delete this object?')) return;
+        
+        const id = selectedObjectId;
+        fetch(API_URL + '/' + id, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        }).then(function(resp) {
+            if (resp.ok) {
+                showMessage('Object deleted');
+                const el = document.getElementById('obj-' + id);
+                if (el) el.remove();
+                closeInspector();
+            } else {
+                return readApiError(resp).then(function(msg) {
+                    showMessage('Delete failed: ' + msg, true);
+                });
+            }
+        }).catch(function(err) {
+            showMessage('Network error on delete', true);
+        });
+    }
+
+    function setupObjectClick(el, obj) {
+        el.classList.add('clickable');
+        el.addEventListener('click', function(evt) {
+            // Prevent multiple objects from triggering at once if they overlap
+            evt.stopPropagation();
+            openInspector(obj);
+        });
+    }
+
     let currentPosition = null;
     let lastGpsAccuracy = null;
     let placeMode = 'cube';
@@ -1061,6 +1208,8 @@
         inner.appendChild(tag);
         anchor.appendChild(inner);
         scene.appendChild(anchor);
+        setupObjectClick(box, obj);
+        setupObjectClick(tag, obj);
         return true;
     }
 
@@ -1080,6 +1229,10 @@
         fillSignpostInner(inner, msg);
         anchor.appendChild(inner);
         scene.appendChild(anchor);
+        
+        inner.querySelectorAll('a-cylinder, a-plane, a-text').forEach(function(el) {
+            setupObjectClick(el, obj);
+        });
         return true;
     }
 
@@ -1115,6 +1268,8 @@
         inner.appendChild(tag);
         root.appendChild(inner);
         scene.appendChild(root);
+        setupObjectClick(box, obj);
+        setupObjectClick(tag, obj);
         return true;
     }
 
@@ -1133,6 +1288,10 @@
         fillSignpostInner(inner, msg);
         root.appendChild(inner);
         scene.appendChild(root);
+        
+        inner.querySelectorAll('a-cylinder, a-plane, a-text').forEach(function(el) {
+            setupObjectClick(el, obj);
+        });
         return true;
     }
 

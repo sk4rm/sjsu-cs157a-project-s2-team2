@@ -138,14 +138,22 @@ public class VirtualObjectDao {
         try (Connection conn = DbUtil.getConnection()) {
             conn.setAutoCommit(false);
             try {
-                try (PreparedStatement ps = conn.prepareStatement("DELETE FROM virtual_props WHERE object_id = ?")) {
-                    ps.setLong(1, id);
-                    ps.executeUpdate();
+                // Delete from dependent tables first to avoid foreign key violations
+                String[] dependents = {
+                    "DELETE FROM virtual_props WHERE object_id = ?",
+                    "DELETE FROM virtual_signposts WHERE object_id = ?",
+                    "DELETE FROM includes WHERE object_id = ?",
+                    "DELETE FROM comments WHERE object_id = ?",
+                    "DELETE FROM votes WHERE object_id = ?"
+                };
+                
+                for (String sql : dependents) {
+                    try (PreparedStatement ps = conn.prepareStatement(sql)) {
+                        ps.setLong(1, id);
+                        ps.executeUpdate();
+                    }
                 }
-                try (PreparedStatement ps = conn.prepareStatement("DELETE FROM virtual_signposts WHERE object_id = ?")) {
-                    ps.setLong(1, id);
-                    ps.executeUpdate();
-                }
+
                 int rows;
                 try (PreparedStatement ps = conn.prepareStatement("DELETE FROM virtual_objects WHERE id = ?")) {
                     ps.setLong(1, id);

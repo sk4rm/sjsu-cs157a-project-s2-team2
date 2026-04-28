@@ -207,6 +207,76 @@
             .landscape-block { display: flex; }
             .hud-top, .hud-bottom, a-scene, #toast { visibility: hidden; }
         }
+
+        .clickable {
+            cursor: pointer;
+        }
+
+        .inspector {
+            position: fixed;
+            bottom: 120px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: min(300px, 90vw);
+            background: rgba(0, 0, 0, 0.85);
+            backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            border-radius: 16px;
+            padding: 16px;
+            z-index: 20;
+            display: none;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+        }
+
+        .inspector.show {
+            display: flex;
+        }
+
+        .inspector-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 8px;
+        }
+
+        .inspector-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+            color: #d37f8f;
+        }
+
+        .inspector-close {
+            background: none;
+            border: none;
+            color: #aaa;
+            font-size: 1.2rem;
+            cursor: pointer;
+            padding: 0 4px;
+        }
+
+        .inspector-body {
+            font-size: 0.85rem;
+            color: #eee;
+            line-height: 1.4;
+        }
+
+        .delete-btn {
+            background: #ff4d4d;
+            color: white;
+            border: none;
+            padding: 10px;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            margin-top: 4px;
+        }
+
+        .delete-btn:active {
+            background: #cc0000;
+        }
     </style>
 </head>
 
@@ -255,7 +325,9 @@
     <a-camera id="xr-camera"
               look-controls="enabled: false"
               wasd-controls="enabled: false"
-              position="0 1.5 0"></a-camera>
+              position="0 1.5 0">
+        <a-cursor color="#d37f8f" fuse="false" raycaster="objects: .clickable"></a-cursor>
+    </a-camera>
     <a-light type="ambient" intensity="0.7"></a-light>
     <a-light type="directional" intensity="0.6" position="2 4 1"></a-light>
 </a-scene>
@@ -279,14 +351,94 @@
     </button>
 </div>
 
+<div id="inspector" class="inspector">
+    <div class="inspector-header">
+        <span id="inspector-title" class="inspector-title">Object Details</span>
+        <button type="button" class="inspector-close" onclick="closeInspector()">×</button>
+    </div>
+    <div id="inspector-body" class="inspector-body">
+        Loading...
+    </div>
+    <button type="button" id="inspector-delete" class="delete-btn" style="display:none;" onclick="onDeleteClicked()">
+        Delete Object
+    </button>
+</div>
+
 <script>
     const API_URL = '<%= request.getContextPath() %>/api/objects';
+    const sessionUserId = <%= (Long) session.getAttribute("userId") %>;
+    let selectedObjectId = null;
+
+    function openInspector(obj) {
+        selectedObjectId = obj.id;
+        document.getElementById('inspector-title').innerText = obj.type === 'signpost' ? 'Signpost' : 'Prop';
+        
+        let bodyHtml = '<strong>ID:</strong> ' + obj.id + '<br>';
+        if (obj.type === 'signpost') {
+            bodyHtml += '<strong>Message:</strong> ' + (obj.content || '') + '<br>';
+        } else {
+            bodyHtml += '<strong>Hash:</strong> ' + (obj.fileHash || 'default') + '<br>';
+        }
+        bodyHtml += '<strong>Lat:</strong> ' + obj.latitude.toFixed(6) + '<br>';
+        bodyHtml += '<strong>Lng:</strong> ' + obj.longitude.toFixed(6);
+        
+        document.getElementById('inspector-body').innerHTML = bodyHtml;
+        
+        const deleteBtn = document.getElementById('inspector-delete');
+        if (obj.userId === sessionUserId) {
+            deleteBtn.style.display = 'block';
+        } else {
+            deleteBtn.style.display = 'none';
+        }
+        
+        document.getElementById('inspector').classList.add('show');
+    }
+
+    function closeInspector() {
+        document.getElementById('inspector').classList.remove('show');
+        selectedObjectId = null;
+    }
+
+    function onDeleteClicked() {
+        if (!selectedObjectId) return;
+        if (!confirm('Are you sure you want to delete this object?')) return;
+        
+        const id = selectedObjectId;
+        fetch(API_URL + '/' + id, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        }).then(function(resp) {
+            if (resp.ok) {
+                showToast('Object deleted');
+                const el = document.getElementById('obj-' + id);
+                if (el) el.remove();
+                closeInspector();
+            } else {
+                return resp.text().then(function(msg) {
+                    showToast('Delete failed: ' + msg.slice(0, 50), true);
+                });
+            }
+        }).catch(function(err) {
+            showToast('Network error on delete', true);
+        });
+    }
+
+    function setupObjectClick(el, obj) {
+        el.classList.add('clickable');
+        el.addEventListener('click', function(evt) {
+            evt.stopPropagation();
+            openInspector(obj);
+        });
+    }
+
     let placeMode = 'cube';
 
     // GPS-anchored origin: lat/lon at session start. Everything else is local meters.
     let originLat = null, originLon = null, originAcc = null;
     const M_PER_DEG_LAT = 111320; // close enough for short distances
     let placedIds = new Set();
+    
+    // (Existing helper functions remain until factories)
 
     function setPlaceMode(mode) {
         placeMode = mode;
@@ -385,7 +537,10 @@
 
     // ---- entity factories (mirror world.jsp's visual style, minus gps-entity-place) ----
 
-    function buildCubeEntity(id, x, z, scale, yawDeg) {
+    function buildCubeEntity(obj, x, z) {
+        const id = obj.id;
+        const scale = obj.scale;
+        const yawDeg = obj.arYawDeg;
         const root = document.createElement('a-entity');
         root.setAttribute('id', 'obj-' + id);
         root.setAttribute('position', x + ' 0 ' + z);
@@ -403,10 +558,15 @@
         box.setAttribute('material', 'color: #d37f8f; metalness: 0.1; roughness: 0.7');
         inner.appendChild(box);
         root.appendChild(inner);
+        setupObjectClick(box, obj);
         return root;
     }
 
-    function buildSignpostEntity(id, x, z, scale, yawDeg, text) {
+    function buildSignpostEntity(obj, x, z) {
+        const id = obj.id;
+        const scale = obj.scale;
+        const yawDeg = obj.arYawDeg;
+        const text = obj.content;
         const root = document.createElement('a-entity');
         root.setAttribute('id', 'obj-' + id);
         root.setAttribute('position', x + ' 0 ' + z);
@@ -436,6 +596,8 @@
         txt.setAttribute('width', '1.25');
         inner.appendChild(txt);
         root.appendChild(inner);
+        
+        [pole, board, txt].forEach(el => setupObjectClick(el, obj));
         return root;
     }
 
@@ -448,8 +610,8 @@
         const dist = Math.hypot(local.x, local.z);
         if (dist > 200) return;
         const entity = (obj.type === 'signpost')
-            ? buildSignpostEntity(obj.id, local.x, local.z, obj.scale, obj.arYawDeg, obj.content)
-            : buildCubeEntity(obj.id, local.x, local.z, obj.scale, obj.arYawDeg);
+            ? buildSignpostEntity(obj, local.x, local.z)
+            : buildCubeEntity(obj, local.x, local.z);
         scene.appendChild(entity);
         placedIds.add(obj.id);
     }
@@ -599,7 +761,6 @@
         setTimeout(xrCheckOrientation, 300);
     });
     window.addEventListener('resize', xrCheckOrientation);
-</script>
 </script>
 </body>
 </html>
