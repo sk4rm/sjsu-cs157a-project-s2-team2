@@ -24,19 +24,43 @@ function openInspector(obj) {
         deleteBtn.style.display = 'none';
     }
 
+    resetDeleteConfirm();
     document.getElementById('inspector').classList.add('show');
 }
 
 function closeInspector() {
     document.getElementById('inspector').classList.remove('show');
     selectedObjectId = null;
+    resetDeleteConfirm();
+}
+
+// native confirm() pauses iOS Safari's camera MediaStreamTrack, which kills
+// 8th Wall's SLAM session — same root cause as the landscape rotation freeze.
+// inline two-step confirm avoids the modal entirely.
+function resetDeleteConfirm() {
+    const del = document.getElementById('inspector-delete');
+    const conf = document.getElementById('inspector-confirm');
+    if (del && del.style.display !== 'none') {
+        // leave alone — caller (openInspector) will reshow per ownership
+    }
+    if (conf) conf.style.display = 'none';
 }
 
 function onDeleteClicked() {
     if (!selectedObjectId) return;
-    if (!confirm('Are you sure you want to delete this object?')) return;
+    document.getElementById('inspector-delete').style.display = 'none';
+    document.getElementById('inspector-confirm').style.display = 'flex';
+}
 
+function onDeleteCancelled() {
+    document.getElementById('inspector-confirm').style.display = 'none';
+    document.getElementById('inspector-delete').style.display = 'block';
+}
+
+function onDeleteConfirmed() {
+    if (!selectedObjectId) return;
     const id = selectedObjectId;
+    document.getElementById('inspector-confirm').style.display = 'none';
     fetch(API_URL + '/' + id, {
         method: 'DELETE', credentials: 'same-origin'
     }).then(function (resp) {
@@ -44,14 +68,17 @@ function onDeleteClicked() {
             showToast('Object deleted');
             const el = document.getElementById('obj-' + id);
             if (el) el.remove();
+            placedIds.delete(id);
             closeInspector();
         } else {
             return resp.text().then(function (msg) {
                 showToast('Delete failed: ' + msg.slice(0, 50), true);
+                onDeleteCancelled();
             });
         }
     }).catch(function (err) {
         showToast('Network error on delete', true);
+        onDeleteCancelled();
     });
 }
 

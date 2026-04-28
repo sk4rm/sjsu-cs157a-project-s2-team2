@@ -116,6 +116,13 @@
     <button type="button" id="inspector-delete" class="delete-btn" style="display:none;" onclick="onDeleteClicked()">
         Delete Object
     </button>
+    <div id="inspector-confirm" style="display:none; flex-direction:column; gap:6px;">
+        <div style="font-size:0.85rem; color:#ff8b8b; text-align:center;">Confirm delete?</div>
+        <div style="display:flex; gap:8px;">
+            <button type="button" class="delete-btn" style="flex:1; margin:0;" onclick="onDeleteConfirmed()">Yes, delete</button>
+            <button type="button" class="delete-btn" style="flex:1; margin:0; background:#444;" onclick="onDeleteCancelled()">Cancel</button>
+        </div>
+    </div>
 </div>
 
 <script>
