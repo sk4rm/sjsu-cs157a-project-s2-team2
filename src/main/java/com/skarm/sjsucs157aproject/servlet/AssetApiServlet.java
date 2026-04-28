@@ -95,9 +95,14 @@ public class AssetApiServlet extends HttpServlet {
             String submittedName = filePart.getSubmittedFileName();
             if (submittedName == null) submittedName = "model.glb";
             String lower = submittedName.toLowerCase();
-            if (!(lower.endsWith(".glb") || lower.endsWith(".gltf"))) {
+            // .gltf is the JSON variant that references external .bin + texture
+            // files as siblings — incompatible with single-file upload because
+            // the loader would try to fetch /api/assets/textures/foo.png etc.
+            // Only the self-contained binary variant (.glb) is accepted.
+            if (!lower.endsWith(".glb")) {
                 sendError(resp, HttpServletResponse.SC_UNSUPPORTED_MEDIA_TYPE,
-                        "Only .glb or .gltf files accepted");
+                        "Only .glb (self-contained binary glTF) is accepted. " +
+                                "Convert .gltf folders to .glb first — e.g. import in Blender and re-export as .glb.");
                 return;
             }
 
@@ -107,7 +112,7 @@ public class AssetApiServlet extends HttpServlet {
             }
             if (displayName.length() > 100) displayName = displayName.substring(0, 100);
 
-            String mimeType = lower.endsWith(".glb") ? "model/gltf-binary" : "model/gltf+json";
+            String mimeType = "model/gltf-binary";
 
             byte[] bytes;
             try (InputStream in = filePart.getInputStream()) {

@@ -291,15 +291,18 @@
 
     <div class="asset-zone">
         <h2>3D Model Library</h2>
-        <p>Upload a glTF/GLB model (max 8 MB). Uploaded models become available as props in any world view.</p>
+        <p>Upload a self-contained <strong>.glb</strong> file (max 8 MB). The <code>.gltf</code> JSON variant
+            isn't supported because it references external textures and mesh buffers — to convert, open the
+            <code>.gltf</code> folder in Blender and re-export as <code>.glb</code>, or use any online glTF→GLB packer.
+            Uploaded models become available as props in any world view.</p>
 
         <form id="asset-upload-form" enctype="multipart/form-data">
             <label for="assetDisplayName">Display name (optional)</label>
             <input type="text" id="assetDisplayName" name="displayName" maxlength="100"
                    placeholder="e.g. red bench">
 
-            <label for="assetFile">Model file (.glb or .gltf)</label>
-            <input type="file" id="assetFile" name="file" accept=".glb,.gltf" required>
+            <label for="assetFile">Model file (.glb)</label>
+            <input type="file" id="assetFile" name="file" accept=".glb" required>
 
             <button type="submit">Upload model</button>
             <div id="upload-status" class="upload-status"></div>
@@ -382,6 +385,10 @@
                 e.preventDefault();
                 const file = document.getElementById('assetFile').files[0];
                 if (!file) { setStatus('Choose a file first', 'err'); return; }
+                if (!/\.glb$/i.test(file.name)) {
+                    setStatus('Only .glb files accepted — convert .gltf to .glb first', 'err');
+                    return;
+                }
                 if (file.size > 8 * 1024 * 1024) { setStatus('File too large (max 8 MB)', 'err'); return; }
 
                 const fd = new FormData();

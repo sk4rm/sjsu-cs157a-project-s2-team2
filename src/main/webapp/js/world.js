@@ -760,8 +760,11 @@ function appendPropBody(parent, obj) {
     var assetId = parseAssetId(obj.fileHash);
     var clickables = [];
     if (assetId) {
-        var model = document.createElement('a-gltf-model');
-        model.setAttribute('src', ASSETS_URL + '/' + assetId);
+        // a-frame core has no <a-gltf-model> primitive — use the gltf-model
+        // component on a plain entity, with the url() wrapper it requires for
+        // direct (non-asset) URLs.
+        var model = document.createElement('a-entity');
+        model.setAttribute('gltf-model', 'url(' + ASSETS_URL + '/' + assetId + ')');
         model.setAttribute('position', '0 0 0');
         parent.appendChild(model);
         clickables.push(model);

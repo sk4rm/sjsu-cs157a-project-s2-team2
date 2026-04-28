@@ -18,6 +18,12 @@
 
     <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world-xr.css">
 
+    <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
+    <% if ("1".equals(request.getParameter("debug"))) { %>
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+    <% } %>
+
     <%-- A-Frame is already used by /world; reuse the same version. --%>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
 

@@ -253,8 +253,11 @@ function buildCubeEntity(obj, x, z) {
     inner.setAttribute('position', '0 0.25 0');
     const assetId = parseAssetId(obj.fileHash);
     if (assetId) {
-        const model = document.createElement('a-gltf-model');
-        model.setAttribute('src', ASSETS_URL + '/' + assetId);
+        // a-frame core has no <a-gltf-model> primitive — use the gltf-model
+        // component on a plain entity, with the url() wrapper it requires for
+        // direct (non-asset) URLs.
+        const model = document.createElement('a-entity');
+        model.setAttribute('gltf-model', 'url(' + ASSETS_URL + '/' + assetId + ')');
         inner.appendChild(model);
         setupObjectClick(model, obj);
     } else {
