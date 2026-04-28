@@ -71,6 +71,9 @@
         </div>
         <input type="text" class="signpost-input" id="signpost-text" maxlength="250"
                placeholder="signpost message (only for signpost)" disabled>
+        <select id="asset-picker" class="signpost-input" title="3D model for cube placements">
+            <option value="">default cube</option>
+        </select>
         <div class="place-hint" id="place-hint">gps updates from camera, or we ask browser once on place</div>
     </div>
     <div class="action-button" onclick="onPlaceButton()" title="place here (GPS or world)">
@@ -104,6 +107,7 @@
 <script>
     window.WARP = {
         apiUrl: '<%= request.getContextPath() %>/api/objects',
+        assetsUrl: '<%= request.getContextPath() %>/api/assets',
         userId: <%= (Long) session.getAttribute("userId") %>
     };
 </script>

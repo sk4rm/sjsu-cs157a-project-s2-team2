@@ -51,7 +51,9 @@
     <div class="lb-card">
         <div class="lb-emoji">⟳</div>
         <div class="lb-title">Please use portrait mode</div>
-        <div class="lb-sub">iOS Safari drops the camera stream when this view rotates. Hold your phone upright to keep tracking alive.</div>
+        <div class="lb-sub">iOS Safari drops the camera stream when this view rotates. Hold your phone upright to keep
+            tracking alive.
+        </div>
     </div>
 </div>
 
@@ -92,15 +94,19 @@
             <button type="button" class="mode-btn on" id="mode-cube" onclick="setPlaceMode('cube')">cube</button>
             <button type="button" class="mode-btn" id="mode-sign" onclick="setPlaceMode('signpost')">signpost</button>
         </div>
+        <label for="signpost-text"></label>
         <input id="signpost-text" class="signpost-input" type="text" maxlength="80"
                placeholder="signpost message (signpost mode only)" disabled>
+        <select id="asset-picker" class="signpost-input" title="3D model for cube placements">
+            <option value="">default cube</option>
+        </select>
         <div class="place-hint" id="place-hint">drops where you're standing — XR tracking, no GPS jitter</div>
     </div>
     <button class="action-button" onclick="placeAtCamera()" aria-label="place">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.4"
              stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="5" x2="12" y2="19"/>
-            <line x1="5" y1="12" x2="19" y2="12"/>
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
     </button>
 </div>
@@ -119,8 +125,12 @@
     <div id="inspector-confirm" style="display:none; flex-direction:column; gap:6px;">
         <div style="font-size:0.85rem; color:#ff8b8b; text-align:center;">Confirm delete?</div>
         <div style="display:flex; gap:8px;">
-            <button type="button" class="delete-btn" style="flex:1; margin:0;" onclick="onDeleteConfirmed()">Yes, delete</button>
-            <button type="button" class="delete-btn" style="flex:1; margin:0; background:#444;" onclick="onDeleteCancelled()">Cancel</button>
+            <button type="button" class="delete-btn" style="flex:1; margin:0;" onclick="onDeleteConfirmed()">Yes,
+                delete
+            </button>
+            <button type="button" class="delete-btn" style="flex:1; margin:0; background:#444;"
+                    onclick="onDeleteCancelled()">Cancel
+            </button>
         </div>
     </div>
 </div>
@@ -128,6 +138,7 @@
 <script>
     window.WARP = {
         apiUrl: '<%= request.getContextPath() %>/api/objects',
+        assetsUrl: '<%= request.getContextPath() %>/api/assets',
         userId: <%= (Long) session.getAttribute("userId") %>
     };
 </script>

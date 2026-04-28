@@ -30,6 +30,7 @@ FILES=(
   warp_votes.sql
   warp_befriends.sql
   warp_object_placements.sql
+  warp_assets.sql
 )
 
 for f in "${FILES[@]}"; do

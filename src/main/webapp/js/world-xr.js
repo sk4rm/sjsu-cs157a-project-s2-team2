@@ -1,6 +1,36 @@
 const API_URL = window.WARP.apiUrl;
+const ASSETS_URL = window.WARP.assetsUrl;
 const sessionUserId = window.WARP.userId;
 let selectedObjectId = null;
+
+// fileHash convention: "asset:<id>" → uploaded glTF, anything else → default cube.
+function parseAssetId(fileHash) {
+    if (!fileHash || typeof fileHash !== 'string') return null;
+    const m = fileHash.match(/^asset:(\d+)$/);
+    return m ? m[1] : null;
+}
+
+function selectedAssetHash() {
+    const sel = document.getElementById('asset-picker');
+    if (!sel || !sel.value) return 'demo_cube';
+    return 'asset:' + sel.value;
+}
+
+function loadAssetPicker() {
+    const sel = document.getElementById('asset-picker');
+    if (!sel) return;
+    fetch(ASSETS_URL, {credentials: 'same-origin'})
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (assets) {
+            assets.forEach(function (a) {
+                const opt = document.createElement('option');
+                opt.value = a.id;
+                opt.textContent = a.displayName + ' (#' + a.id + ')';
+                sel.appendChild(opt);
+            });
+        })
+        .catch(function () { /* leave default option only */ });
+}
 
 function openInspector(obj) {
     selectedObjectId = obj.id;
@@ -221,14 +251,22 @@ function buildCubeEntity(obj, x, z) {
     const s = scale || 1;
     inner.setAttribute('scale', s + ' ' + s + ' ' + s);
     inner.setAttribute('position', '0 0.25 0');
-    const box = document.createElement('a-box');
-    box.setAttribute('width', '0.5');
-    box.setAttribute('height', '0.5');
-    box.setAttribute('depth', '0.5');
-    box.setAttribute('material', 'color: #d37f8f; metalness: 0.1; roughness: 0.7');
-    inner.appendChild(box);
+    const assetId = parseAssetId(obj.fileHash);
+    if (assetId) {
+        const model = document.createElement('a-gltf-model');
+        model.setAttribute('src', ASSETS_URL + '/' + assetId);
+        inner.appendChild(model);
+        setupObjectClick(model, obj);
+    } else {
+        const box = document.createElement('a-box');
+        box.setAttribute('width', '0.5');
+        box.setAttribute('height', '0.5');
+        box.setAttribute('depth', '0.5');
+        box.setAttribute('material', 'color: #d37f8f; metalness: 0.1; roughness: 0.7');
+        inner.appendChild(box);
+        setupObjectClick(box, obj);
+    }
     root.appendChild(inner);
-    setupObjectClick(box, obj);
     return root;
 }
 
@@ -334,7 +372,7 @@ function placeAtCamera() {
         if (txt.length > 0) fd.append('content', txt);
     } else {
         fd.append('type', 'prop');
-        fd.append('fileHash', 'demo_cube');
+        fd.append('fileHash', selectedAssetHash());
     }
     fetch(API_URL, {
         method: 'POST',
@@ -393,6 +431,7 @@ document.addEventListener('DOMContentLoaded', function () {
         });
     }
 
+    loadAssetPicker();
     setStatus('status-tracking', '<strong>Tracking</strong>: locking GPS origin…');
     lockOriginGps()
         .then(function (best) {

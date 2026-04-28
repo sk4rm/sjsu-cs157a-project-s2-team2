@@ -170,6 +170,79 @@
         .danger-zone button:hover {
             box-shadow: 0 10px 22px rgba(161, 53, 75, 0.55);
         }
+
+        .asset-zone {
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px dashed var(--border-soft);
+        }
+
+        .asset-zone h2 {
+            margin: 0 0 8px;
+            font-size: 1rem;
+            color: var(--accent-rose);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .asset-zone p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin: 4px 0 12px;
+        }
+
+        .asset-list {
+            list-style: none;
+            padding: 0;
+            margin: 12px 0 0;
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+
+        .asset-list li {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 8px 12px;
+            background: #fdfbfb;
+            border: 1px solid var(--border-soft);
+            border-radius: 12px;
+            font-size: 0.85rem;
+        }
+
+        .asset-list .meta {
+            color: var(--text-muted);
+            font-size: 0.75rem;
+            margin-left: 8px;
+        }
+
+        .asset-list .del {
+            background: transparent;
+            color: #a1354b;
+            border: 1px solid rgba(161, 53, 75, 0.4);
+            border-radius: 999px;
+            font-size: 0.75rem;
+            padding: 4px 10px;
+            margin: 0;
+            box-shadow: none;
+            cursor: pointer;
+        }
+
+        .asset-list .empty {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            font-style: italic;
+        }
+
+        .upload-status {
+            margin-top: 8px;
+            font-size: 0.85rem;
+            min-height: 1.1em;
+        }
+
+        .upload-status.ok { color: #2f7a3a; }
+        .upload-status.err { color: #a1354b; }
     </style>
 </head>
 <body>
@@ -215,6 +288,129 @@
 
         <button type="submit">Save changes</button>
     </form>
+
+    <div class="asset-zone">
+        <h2>3D Model Library</h2>
+        <p>Upload a glTF/GLB model (max 8 MB). Uploaded models become available as props in any world view.</p>
+
+        <form id="asset-upload-form" enctype="multipart/form-data">
+            <label for="assetDisplayName">Display name (optional)</label>
+            <input type="text" id="assetDisplayName" name="displayName" maxlength="100"
+                   placeholder="e.g. red bench">
+
+            <label for="assetFile">Model file (.glb or .gltf)</label>
+            <input type="file" id="assetFile" name="file" accept=".glb,.gltf" required>
+
+            <button type="submit">Upload model</button>
+            <div id="upload-status" class="upload-status"></div>
+        </form>
+
+        <ul id="asset-list" class="asset-list">
+            <li class="empty">Loading library…</li>
+        </ul>
+    </div>
+
+    <script>
+        (function () {
+            const ctx = '<%= request.getContextPath() %>';
+            const myId = <%= user != null ? user.getUserId() : "null" %>;
+            const listEl = document.getElementById('asset-list');
+            const form = document.getElementById('asset-upload-form');
+            const statusEl = document.getElementById('upload-status');
+
+            function setStatus(msg, kind) {
+                statusEl.textContent = msg || '';
+                statusEl.className = 'upload-status' + (kind ? ' ' + kind : '');
+            }
+
+            function fmtBytes(n) {
+                if (n < 1024) return n + ' B';
+                if (n < 1024 * 1024) return (n / 1024).toFixed(1) + ' KB';
+                return (n / 1024 / 1024).toFixed(2) + ' MB';
+            }
+
+            function refreshList() {
+                fetch(ctx + '/api/assets', { credentials: 'same-origin' })
+                    .then(function (r) { return r.ok ? r.json() : []; })
+                    .then(function (assets) {
+                        if (!assets.length) {
+                            listEl.innerHTML = '<li class="empty">No models uploaded yet.</li>';
+                            return;
+                        }
+                        listEl.innerHTML = '';
+                        assets.forEach(function (a) {
+                            const li = document.createElement('li');
+                            const left = document.createElement('span');
+                            left.textContent = a.displayName;
+                            const meta = document.createElement('span');
+                            meta.className = 'meta';
+                            meta.textContent = '#' + a.id + ' · ' + fmtBytes(a.byteSize);
+                            left.appendChild(meta);
+                            li.appendChild(left);
+                            if (a.uploaderId === myId) {
+                                const btn = document.createElement('button');
+                                btn.type = 'button';
+                                btn.className = 'del';
+                                btn.textContent = 'Delete';
+                                btn.onclick = function () { onDelete(a.id, a.displayName); };
+                                li.appendChild(btn);
+                            }
+                            listEl.appendChild(li);
+                        });
+                    })
+                    .catch(function () {
+                        listEl.innerHTML = '<li class="empty">Could not load library.</li>';
+                    });
+            }
+
+            function onDelete(id, name) {
+                if (!confirm('Delete "' + name + '"? Existing props using this model will fall back to a default cube.')) return;
+                fetch(ctx + '/api/assets/' + id, {
+                    method: 'DELETE',
+                    credentials: 'same-origin'
+                }).then(function (r) {
+                    if (r.ok || r.status === 204) {
+                        setStatus('Deleted "' + name + '"', 'ok');
+                        refreshList();
+                    } else {
+                        setStatus('Delete failed (' + r.status + ')', 'err');
+                    }
+                }).catch(function () { setStatus('Network error on delete', 'err'); });
+            }
+
+            form.addEventListener('submit', function (e) {
+                e.preventDefault();
+                const file = document.getElementById('assetFile').files[0];
+                if (!file) { setStatus('Choose a file first', 'err'); return; }
+                if (file.size > 8 * 1024 * 1024) { setStatus('File too large (max 8 MB)', 'err'); return; }
+
+                const fd = new FormData();
+                fd.append('file', file);
+                const dn = document.getElementById('assetDisplayName').value.trim();
+                if (dn) fd.append('displayName', dn);
+
+                setStatus('Uploading…');
+                fetch(ctx + '/api/assets', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    body: fd
+                }).then(function (r) {
+                    if (!r.ok) {
+                        return r.json().then(function (j) {
+                            setStatus(j.error || ('Upload failed (' + r.status + ')'), 'err');
+                        }).catch(function () { setStatus('Upload failed (' + r.status + ')', 'err'); });
+                    }
+                    return r.json().then(function (a) {
+                        setStatus('Uploaded "' + a.displayName + '"', 'ok');
+                        form.reset();
+                        refreshList();
+                    });
+                }).catch(function () { setStatus('Network error', 'err'); });
+            });
+
+            refreshList();
+        })();
+    </script>
 
     <div class="danger-zone">
         <h2>Danger zone</h2>

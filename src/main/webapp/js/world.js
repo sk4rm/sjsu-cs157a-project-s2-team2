@@ -1,6 +1,36 @@
 const API_URL = window.WARP.apiUrl;
+const ASSETS_URL = window.WARP.assetsUrl;
 const sessionUserId = window.WARP.userId;
 let selectedObjectId = null;
+
+// fileHash convention: "asset:<id>" → uploaded glTF, anything else → default cube.
+function parseAssetId(fileHash) {
+    if (!fileHash || typeof fileHash !== 'string') return null;
+    const m = fileHash.match(/^asset:(\d+)$/);
+    return m ? m[1] : null;
+}
+
+function selectedAssetHash() {
+    const sel = document.getElementById('asset-picker');
+    if (!sel || !sel.value) return 'demo_cube';
+    return 'asset:' + sel.value;
+}
+
+function loadAssetPicker() {
+    const sel = document.getElementById('asset-picker');
+    if (!sel) return;
+    fetch(ASSETS_URL, {credentials: 'same-origin'})
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (assets) {
+            assets.forEach(function (a) {
+                const opt = document.createElement('option');
+                opt.value = a.id;
+                opt.textContent = a.displayName + ' (#' + a.id + ')';
+                sel.appendChild(opt);
+            });
+        })
+        .catch(function () { /* leave default option only */ });
+}
 
 function openInspector(obj) {
     selectedObjectId = obj.id;
@@ -180,24 +210,14 @@ function appendWorldPlacementSession(rec) {
     }
 }
 
-function spawnWorldCubeEntity(scene, id, wx, wy, wz) {
+function spawnWorldCubeEntity(scene, id, wx, wy, wz, fileHash) {
     var root = document.createElement('a-entity');
     root.setAttribute('id', id);
     root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
-    var box = document.createElement('a-box');
-    box.setAttribute('width', '0.5');
-    box.setAttribute('height', '0.5');
-    box.setAttribute('depth', '0.5');
-    box.setAttribute('position', '0 0.25 0');
-    box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
-    var tag = document.createElement('a-text');
-    tag.setAttribute('value', 'world');
-    tag.setAttribute('align', 'center');
-    tag.setAttribute('position', '0 0.45 0');
-    tag.setAttribute('scale', '0.5 0.5 0.5');
-    tag.setAttribute('color', '#ffffff');
-    root.appendChild(box);
-    root.appendChild(tag);
+    var inner = document.createElement('a-entity');
+    inner.setAttribute('position', '0 0.25 0');
+    appendPropBody(inner, {fileHash: fileHash});
+    root.appendChild(inner);
     scene.appendChild(root);
 }
 
@@ -225,7 +245,7 @@ function restoreWorldPlacementsFromSession(scene) {
         list.forEach(function (rec) {
             if (!rec || !rec.id || document.getElementById(rec.id)) return;
             if (rec.kind === 'cube' && rec.x != null && rec.y != null && rec.z != null) {
-                spawnWorldCubeEntity(scene, rec.id, rec.x, rec.y, rec.z);
+                spawnWorldCubeEntity(scene, rec.id, rec.x, rec.y, rec.z, rec.fileHash);
                 n++;
             } else if (rec.kind === 'signpost' && rec.content != null && rec.x != null && rec.y != null && rec.z != null) {
                 spawnWorldSignpostEntity(scene, rec.id, rec.x, rec.y, rec.z, rec.content);
@@ -385,8 +405,9 @@ function placeWorldSpacePermanentCube() {
         resolveLatLngThen(function (lat, lng) {
             function offlineDrop() {
                 var id = 'world-placed-' + Date.now();
-                spawnWorldCubeEntity(scene, id, wx, wy, wz);
-                appendWorldPlacementSession({kind: 'cube', id: id, x: wx, y: wy, z: wz, savedAt: Date.now()});
+                var hash = selectedAssetHash();
+                spawnWorldCubeEntity(scene, id, wx, wy, wz, hash);
+                appendWorldPlacementSession({kind: 'cube', id: id, x: wx, y: wy, z: wz, fileHash: hash, savedAt: Date.now()});
                 showMessage('no gps / server — saved local only', true);
             }
 
@@ -575,7 +596,7 @@ function submitPlace(lat, lng) {
         if (txt.length > 0) formData.append('content', txt);
     } else {
         formData.append('type', 'prop');
-        formData.append('fileHash', 'demo_cube');
+        formData.append('fileHash', selectedAssetHash());
     }
 
     fetch(API_URL, {
@@ -614,7 +635,7 @@ function submitWorldPlaceWithAr(lat, lng, wx, wy, wz, isSignpost) {
         if (txt.length > 0) formData.append('content', txt);
     } else {
         formData.append('type', 'prop');
-        formData.append('fileHash', 'demo_cube');
+        formData.append('fileHash', selectedAssetHash());
     }
     return fetch(API_URL, {
         method: 'POST',
@@ -733,6 +754,38 @@ function placeAtGps() {
     });
 }
 
+// shared cube/asset body — sized 0.5m default cube, or a-gltf-model if fileHash is "asset:N".
+// returns the array of clickable elements added.
+function appendPropBody(parent, obj) {
+    var assetId = parseAssetId(obj.fileHash);
+    var clickables = [];
+    if (assetId) {
+        var model = document.createElement('a-gltf-model');
+        model.setAttribute('src', ASSETS_URL + '/' + assetId);
+        model.setAttribute('position', '0 0 0');
+        parent.appendChild(model);
+        clickables.push(model);
+    } else {
+        var box = document.createElement('a-box');
+        box.setAttribute('width', '0.5');
+        box.setAttribute('height', '0.5');
+        box.setAttribute('depth', '0.5');
+        box.setAttribute('position', '0 0 0');
+        box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
+        parent.appendChild(box);
+        clickables.push(box);
+        var tag = document.createElement('a-text');
+        tag.setAttribute('value', (obj.fileHash || 'cube').slice(0, 20));
+        tag.setAttribute('align', 'center');
+        tag.setAttribute('position', '0 0.45 0');
+        tag.setAttribute('scale', '0.7 0.7 0.7');
+        tag.setAttribute('color', '#ffffff');
+        parent.appendChild(tag);
+        clickables.push(tag);
+    }
+    return clickables;
+}
+
 function attachCubeGps(scene, obj) {
     var anchor = document.createElement('a-entity');
     anchor.setAttribute('id', 'obj-' + obj.id);
@@ -745,24 +798,9 @@ function attachCubeGps(scene, obj) {
     inner.setAttribute('position', '0 0.25 0');
     var s = obj.scale || 1;
     inner.setAttribute('scale', s + ' ' + s + ' ' + s);
-    var box = document.createElement('a-box');
-    box.setAttribute('width', '0.5');
-    box.setAttribute('height', '0.5');
-    box.setAttribute('depth', '0.5');
-    box.setAttribute('position', '0 0 0');
-    box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
-    inner.appendChild(box);
-    var tag = document.createElement('a-text');
-    tag.setAttribute('value', (obj.fileHash || 'cube').slice(0, 20));
-    tag.setAttribute('align', 'center');
-    tag.setAttribute('position', '0 0.45 0');
-    tag.setAttribute('scale', '0.7 0.7 0.7');
-    tag.setAttribute('color', '#ffffff');
-    inner.appendChild(tag);
+    appendPropBody(inner, obj).forEach(function (el) { setupObjectClick(el, obj); });
     anchor.appendChild(inner);
     scene.appendChild(anchor);
-    setupObjectClick(box, obj);
-    setupObjectClick(tag, obj);
     return true;
 }
 
@@ -804,24 +842,9 @@ function attachCubeWorld(scene, obj) {
     inner.setAttribute('position', '0 0.25 0');
     var s = obj.scale || 1;
     inner.setAttribute('scale', s + ' ' + s + ' ' + s);
-    var box = document.createElement('a-box');
-    box.setAttribute('width', '0.5');
-    box.setAttribute('height', '0.5');
-    box.setAttribute('depth', '0.5');
-    box.setAttribute('position', '0 0 0');
-    box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
-    inner.appendChild(box);
-    var tag = document.createElement('a-text');
-    tag.setAttribute('value', (obj.fileHash || 'cube').slice(0, 20));
-    tag.setAttribute('align', 'center');
-    tag.setAttribute('position', '0 0.45 0');
-    tag.setAttribute('scale', '0.7 0.7 0.7');
-    tag.setAttribute('color', '#ffffff');
-    inner.appendChild(tag);
+    appendPropBody(inner, obj).forEach(function (el) { setupObjectClick(el, obj); });
     root.appendChild(inner);
     scene.appendChild(root);
-    setupObjectClick(box, obj);
-    setupObjectClick(tag, obj);
     return true;
 }
 
@@ -942,6 +965,7 @@ window.onload = () => {
     });
 
     syncPlaceHint();
+    loadAssetPicker();
     loadObjects();
 };
 
