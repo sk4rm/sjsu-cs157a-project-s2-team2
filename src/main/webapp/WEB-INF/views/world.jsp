@@ -5,6 +5,11 @@
 <head>
     <title>WARP - Camera View</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
+    <% if ("1".equals(request.getParameter("debug"))) { %>
+    <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
+    <script>eruda.init();</script>
+    <% } %>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
     <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
     <style>
@@ -318,7 +323,7 @@
 </div>
 
 <a-scene vr-mode-ui="enabled: false" embedded
-         arjs="sourceType: webcam; debugUIEnabled: false; antialias: true; alpha: true"
+         arjs="sourceType: webcam; videoTexture: true; debugUIEnabled: false; antialias: true; alpha: true"
          renderer="antialias: true; alpha: true">
 
     <a-camera gps-camera rotation-reader></a-camera>
