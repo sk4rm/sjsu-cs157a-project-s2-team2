@@ -52,10 +52,8 @@ You may have disabled GPS permissions for your browser app. If you're using an i
 Security_ > _Location Services_ > Find your browser app > Set to any option besides _Never_. Then, refresh the page to
 re-allow all your camera and GPS.
 
-#### Camera feed is stretched
+### Known Issues
 
-To be fixed in the future.
-
-### TODO
-
-- Hide ugly server errors with a custom page
+- Objects in AR.js appear stretched.
+- Server errors are ugly.
+- 3D model file data is stored directly in database instead of in a file store.
