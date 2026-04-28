@@ -1,0 +1,344 @@
+body,
+html {
+    margin: 0;
+    padding: 0;
+    width: 100%;
+    height: 100%;
+    background-color: #000;
+    overflow: hidden;
+    font-family: system-ui, -apple-system, sans-serif;
+    color: white;
+}
+
+video {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    margin: 0 !important;
+    z-index: 0 !important;
+    object-fit: cover;
+}
+
+.a-canvas,
+a-scene canvas {
+    position: fixed !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100vw !important;
+    height: 100vh !important;
+    background: transparent !important;
+    z-index: 1 !important;
+}
+
+.hud-top {
+    position: absolute;
+    top: 20px;
+    left: 20px;
+    right: 20px;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    flex-wrap: wrap;
+    gap: 8px;
+    z-index: 10;
+}
+
+.hud-btn {
+    background: rgba(0, 0, 0, 0.4);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
+    padding: 10px 16px;
+    border-radius: 999px;
+    backdrop-filter: blur(8px);
+    text-decoration: none;
+    font-size: 0.9rem;
+    display: inline-flex;
+    align-items: center;
+}
+
+.status {
+    background: rgba(0, 0, 0, 0.6);
+    padding: 10px 16px;
+    border-radius: 12px;
+    font-size: 0.85rem;
+    max-width: 250px;
+    backdrop-filter: blur(4px);
+}
+
+.hud-bottom {
+    position: absolute;
+    bottom: 30px;
+    left: 0;
+    right: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    z-index: 10;
+}
+
+.action-button {
+    width: 70px;
+    height: 70px;
+    border-radius: 50%;
+    background: white;
+    border: 4px solid rgba(255, 255, 255, 0.5);
+    background-clip: padding-box;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #333;
+    transition: transform 0.1s;
+}
+
+.action-button:active {
+    transform: scale(0.9);
+}
+
+.place-bar {
+    width: min(340px, 92vw);
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: rgba(0, 0, 0, 0.55);
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    backdrop-filter: blur(6px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.place-modes {
+    display: flex;
+    gap: 8px;
+}
+
+.mode-btn {
+    flex: 1;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.25);
+    background: rgba(40, 40, 40, 0.9);
+    color: #ddd;
+    font-size: 0.82rem;
+    cursor: pointer;
+}
+
+.mode-btn.on {
+    background: rgba(211, 127, 143, 0.55);
+    color: #fff;
+    border-color: rgba(255, 255, 255, 0.45);
+}
+
+.signpost-input {
+    width: 100%;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+    background: rgba(30, 30, 30, 0.95);
+    color: #fff;
+    font-size: 0.85rem;
+    box-sizing: border-box;
+}
+
+.signpost-input:disabled {
+    opacity: 0.45;
+}
+
+.place-hint {
+    font-size: 0.72rem;
+    color: #aaa;
+    text-align: center;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+}
+
+.loading-overlay {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-direction: column;
+    background: #000;
+    z-index: 100;
+    transition: opacity 0.5s;
+}
+
+/* ios usually wants a tap before it shows the location popup */
+.loc-prompt {
+    position: fixed;
+    top: 72px;
+    left: 12px;
+    right: 12px;
+    z-index: 15;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: rgba(20, 20, 20, 0.88);
+    border: 1px solid rgba(211, 127, 143, 0.45);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    align-items: stretch;
+    max-width: 420px;
+    margin-left: auto;
+    margin-right: auto;
+}
+
+.loc-prompt p {
+    margin: 0;
+    font-size: 0.82rem;
+    line-height: 1.35;
+    color: #e8e0e2;
+}
+
+.loc-prompt button {
+    padding: 11px 16px;
+    border-radius: 999px;
+    border: none;
+    background: linear-gradient(135deg, #d37f8f, #e6a3af);
+    color: #fff;
+    font-weight: 600;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+
+.loc-prompt button.secondary {
+    background: rgba(255, 255, 255, 0.12);
+    font-weight: 500;
+}
+
+.loc-prompt.hidden {
+    display: none;
+}
+
+@media (max-width: 640px) {
+    .hud-top {
+        top: 10px;
+        left: 10px;
+        right: 10px;
+        gap: 6px;
+    }
+
+    .hud-btn {
+        padding: 8px 12px;
+        font-size: 0.78rem;
+    }
+
+    .status {
+        max-width: 100%;
+        width: 100%;
+        font-size: 0.78rem;
+        padding: 8px 10px;
+    }
+
+    .hud-bottom {
+        bottom: 14px;
+        gap: 8px;
+    }
+
+    .place-bar {
+        width: min(96vw, 380px);
+        padding: 8px 9px;
+        gap: 6px;
+    }
+
+    .mode-btn {
+        padding: 7px 8px;
+        font-size: 0.76rem;
+    }
+
+    .signpost-input {
+        font-size: 0.78rem;
+        padding: 7px 8px;
+    }
+
+    .place-hint {
+        font-size: 0.68rem;
+    }
+
+    .action-button {
+        width: 62px;
+        height: 62px;
+    }
+
+    .loc-prompt {
+        top: 58px;
+        left: 8px;
+        right: 8px;
+        padding: 10px 11px;
+        gap: 8px;
+    }
+
+    .inspector {
+        position: fixed;
+        bottom: 120px;
+        left: 50%;
+        transform: translateX(-50%);
+        width: min(300px, 90vw);
+        background: rgba(0, 0, 0, 0.85);
+        backdrop-filter: blur(10px);
+        border: 1px solid rgba(255, 255, 255, 0.2);
+        border-radius: 16px;
+        padding: 16px;
+        z-index: 20;
+        display: none;
+        flex-direction: column;
+        gap: 12px;
+        box-shadow: 0 8px 32px rgba(0, 0, 0, 0.5);
+    }
+
+    .inspector.show {
+        display: flex;
+    }
+
+    .inspector-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        padding-bottom: 8px;
+    }
+
+    .inspector-title {
+        font-weight: 600;
+        font-size: 0.95rem;
+        color: #d37f8f;
+    }
+
+    .inspector-close {
+        background: none;
+        border: none;
+        color: #aaa;
+        font-size: 1.2rem;
+        cursor: pointer;
+        padding: 0 4px;
+    }
+
+    .inspector-body {
+        font-size: 0.85rem;
+        color: #eee;
+        line-height: 1.4;
+    }
+
+    .delete-btn {
+        background: #ff4d4d;
+        color: white;
+        border: none;
+        padding: 10px;
+        border-radius: 8px;
+        font-weight: 600;
+        cursor: pointer;
+        margin-top: 4px;
+    }
+
+    .delete-btn:active {
+        background: #cc0000;
+    }
+}
