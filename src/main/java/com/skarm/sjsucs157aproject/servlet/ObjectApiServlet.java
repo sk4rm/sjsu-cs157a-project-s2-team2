@@ -1,5 +1,6 @@
 package com.skarm.sjsucs157aproject.servlet;
 
+import com.skarm.sjsucs157aproject.dao.LayerDao;
 import com.skarm.sjsucs157aproject.dao.VirtualObjectDao;
 import com.skarm.sjsucs157aproject.model.VirtualObject;
 import com.skarm.sjsucs157aproject.model.VirtualProp;
@@ -22,6 +23,7 @@ import java.util.List;
 public class ObjectApiServlet extends HttpServlet {
 
     private final VirtualObjectDao objectDao = new VirtualObjectDao();
+    private final LayerDao layerDao = new LayerDao();
 
     @Override
     protected void service(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -107,6 +109,7 @@ public class ObjectApiServlet extends HttpServlet {
                 }
                 signpost.setContent(msg);
                 objectDao.create(signpost);
+                linkLayerIfRequested(req, signpost);
                 resp.setStatus(HttpServletResponse.SC_CREATED);
                 resp.getWriter().write(toJson(signpost).build().toString());
             } else {
@@ -115,8 +118,9 @@ public class ObjectApiServlet extends HttpServlet {
                 prop.setLatitude(lat);
                 prop.setLongitude(lng);
                 applyArAnchor(prop, arX, arY, arZ, arYawDeg);
-                prop.setFileHash(req.getParameter("fileHash") != null ? req.getParameter("fileHash") : "default_box_hash");
+                prop.setFileHash(req.getParameter("fileHash") != null ? req.getParameter("fileHash") : "preset:cube");
                 objectDao.create(prop);
+                linkLayerIfRequested(req, prop);
                 resp.setStatus(HttpServletResponse.SC_CREATED);
                 resp.getWriter().write(toJson(prop).build().toString());
             }
@@ -251,14 +255,35 @@ public class ObjectApiServlet extends HttpServlet {
         resp.getWriter().write(Json.createObjectBuilder().add("error", message).build().toString());
     }
 
+    private void linkLayerIfRequested(HttpServletRequest req, VirtualObject created) {
+        String raw = req.getParameter("layerId");
+        if (raw == null || raw.isBlank()) {
+            return;
+        }
+        try {
+            long layerId = Long.parseLong(raw.trim());
+            layerDao.addObjectToLayer(layerId, created.getId());
+            created.getLayerIds().add(layerId);
+        } catch (NumberFormatException ex) {
+            getServletContext().log("Ignoring invalid layerId: " + raw, ex);
+        } catch (SQLException ex) {
+            getServletContext().log("Optional layer link failed for object " + created.getId(), ex);
+        }
+    }
+
     private JsonObjectBuilder toJson(VirtualObject obj) {
+        JsonArrayBuilder layerArr = Json.createArrayBuilder();
+        for (Long lid : obj.getLayerIds()) {
+            layerArr.add(lid);
+        }
         JsonObjectBuilder b = Json.createObjectBuilder()
                 .add("id", obj.getId())
                 .add("userId", obj.getUserId())
                 .add("latitude", obj.getLatitude())
                 .add("longitude", obj.getLongitude())
                 .add("rotation", obj.getRotation())
-                .add("scale", obj.getScale());
+                .add("scale", obj.getScale())
+                .add("layerIds", layerArr);
         if (obj.getArX() != null) {
             b.add("arX", obj.getArX());
         }

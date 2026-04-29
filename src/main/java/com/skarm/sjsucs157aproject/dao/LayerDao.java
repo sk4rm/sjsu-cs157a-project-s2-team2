@@ -60,6 +60,19 @@ public class LayerDao {
         }
     }
 
+    /**
+     * Associates a virtual object with a layer. Duplicate pairs are ignored (INSERT IGNORE).
+     */
+    public void addObjectToLayer(long layerId, long objectId) throws SQLException {
+        String sql = "INSERT IGNORE INTO includes (layer_id, object_id) VALUES (?, ?)";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, layerId);
+            ps.setLong(2, objectId);
+            ps.executeUpdate();
+        }
+    }
+
     public boolean delete(long layerId) throws SQLException {
         try (Connection conn = DbUtil.getConnection()) {
             conn.setAutoCommit(false);

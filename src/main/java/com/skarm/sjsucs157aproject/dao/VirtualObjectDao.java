@@ -7,7 +7,9 @@ import com.skarm.sjsucs157aproject.util.DbUtil;
 
 import java.sql.*;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 public class VirtualObjectDao {
 
@@ -37,6 +39,7 @@ public class VirtualObjectDao {
                 }
             }
         }
+        attachLayerIds(objects);
         return objects;
     }
 
@@ -78,6 +81,7 @@ public class VirtualObjectDao {
                 + "SELECT v.id, v.user_id, ST_X(v.position) as lng, ST_Y(v.position) as lat, v.rotation, v.scale, "
                 + "s.content as detail, 'signpost' as subtype, v.ar_x, v.ar_y, v.ar_z, v.ar_yaw_deg "
                 + "FROM virtual_objects v JOIN virtual_signposts s ON v.id = s.object_id WHERE v.id = ?";
+        VirtualObject result = null;
         try (Connection conn = DbUtil.getConnection(); PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, id);
             ps.setLong(2, id);
@@ -88,17 +92,20 @@ public class VirtualObjectDao {
                         VirtualProp prop = new VirtualProp();
                         mapBaseFields(rs, prop);
                         prop.setFileHash(rs.getString("detail"));
-                        return prop;
+                        result = prop;
                     } else {
                         VirtualSignpost signpost = new VirtualSignpost();
                         mapBaseFields(rs, signpost);
                         signpost.setContent(rs.getString("detail"));
-                        return signpost;
+                        result = signpost;
                     }
                 }
             }
         }
-        return null;
+        if (result != null) {
+            attachLayerIds(List.of(result));
+        }
+        return result;
     }
 
     public void update(VirtualObject obj) throws SQLException {
@@ -229,6 +236,40 @@ public class VirtualObjectDao {
             ps.setDouble(idx, val);
         } else {
             ps.setNull(idx, Types.DOUBLE);
+        }
+    }
+
+    private void attachLayerIds(List<VirtualObject> objects) throws SQLException {
+        if (objects.isEmpty()) {
+            return;
+        }
+        for (VirtualObject o : objects) {
+            o.getLayerIds().clear();
+        }
+        List<Long> ids = new ArrayList<>();
+        for (VirtualObject o : objects) {
+            ids.add(o.getId());
+        }
+        String placeholders = String.join(",", ids.stream().map(id -> "?").toList());
+        String sql = "SELECT object_id, layer_id FROM includes WHERE object_id IN (" + placeholders + ") ORDER BY layer_id";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            for (int i = 0; i < ids.size(); i++) {
+                ps.setLong(i + 1, ids.get(i));
+            }
+            Map<Long, VirtualObject> byId = new HashMap<>();
+            for (VirtualObject o : objects) {
+                byId.put(o.getId(), o);
+            }
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    long oid = rs.getLong("object_id");
+                    VirtualObject o = byId.get(oid);
+                    if (o != null) {
+                        o.getLayerIds().add(rs.getLong("layer_id"));
+                    }
+                }
+            }
         }
     }
 }

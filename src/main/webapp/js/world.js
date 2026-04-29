@@ -1,24 +1,45 @@
 const API_URL = window.WARP.apiUrl;
 const ASSETS_URL = window.WARP.assetsUrl;
 const sessionUserId = window.WARP.userId;
+const LAYER_FILTER_KEY = 'warp-active-layer-id';
 let selectedObjectId = null;
 
-// fileHash convention: "asset:<id>" → uploaded glTF, anything else → default cube.
+// fileHash convention: "asset:<id>" → uploaded glTF; "preset:*" → built-in shape; else legacy cube + label.
 function parseAssetId(fileHash) {
     if (!fileHash || typeof fileHash !== 'string') return null;
     const m = fileHash.match(/^asset:(\d+)$/);
     return m ? m[1] : null;
 }
 
-function selectedAssetHash() {
+function parsePresetKind(fileHash) {
+    if (!fileHash || typeof fileHash !== 'string') return 'cube';
+    if (fileHash.startsWith('preset:')) {
+        const p = fileHash.slice(7);
+        if (p === 'bread' || p === 'stars' || p === 'cube') return p;
+        return 'cube';
+    }
+    if (fileHash === 'demo_cube' || fileHash === 'default_box_hash') return 'cube';
+    return null;
+}
+
+function selectedPropHash() {
     const sel = document.getElementById('asset-picker');
-    if (!sel || !sel.value) return 'demo_cube';
-    return 'asset:' + sel.value;
+    if (!sel || !sel.value) return 'preset:cube';
+    const v = sel.value;
+    if (typeof v === 'string' && v.startsWith('preset:')) return v;
+    return 'asset:' + v;
+}
+
+function appendLayerIfAny(formData) {
+    const lp = document.getElementById('layer-picker');
+    if (lp && lp.value) formData.append('layerId', lp.value);
 }
 
 function loadAssetPicker() {
+    const uploads = document.getElementById('asset-picker-uploads');
     const sel = document.getElementById('asset-picker');
-    if (!sel) return;
+    const parent = uploads || sel;
+    if (!parent || !ASSETS_URL) return;
     fetch(ASSETS_URL, {credentials: 'same-origin'})
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (assets) {
@@ -26,10 +47,51 @@ function loadAssetPicker() {
                 const opt = document.createElement('option');
                 opt.value = a.id;
                 opt.textContent = a.displayName + ' (#' + a.id + ')';
-                sel.appendChild(opt);
+                if (uploads) uploads.appendChild(opt);
+                else sel.appendChild(opt);
             });
         })
-        .catch(function () { /* leave default option only */ });
+        .catch(function () { /* presets only */ });
+}
+
+function loadLayerPicker() {
+    const sel = document.getElementById('layer-picker');
+    const url = window.WARP && window.WARP.layersUrl;
+    if (!sel || !url) return;
+    fetch(url, {credentials: 'same-origin'})
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (layers) {
+            while (sel.options.length > 1) sel.remove(1);
+            layers.forEach(function (L) {
+                const opt = document.createElement('option');
+                opt.value = String(L.layerId);
+                opt.textContent = L.name;
+                sel.appendChild(opt);
+            });
+            const saved = localStorage.getItem(LAYER_FILTER_KEY);
+            if (saved && Array.prototype.some.call(sel.options, function (o) { return o.value === saved; })) {
+                sel.value = saved;
+            }
+            const scene = document.querySelector('a-scene');
+            if (scene) loadObjects();
+        })
+        .catch(function () { });
+    sel.addEventListener('change', function () {
+        localStorage.setItem(LAYER_FILTER_KEY, sel.value || '');
+        loadObjects();
+    });
+}
+
+function filterObjectsByLayer(list) {
+    const sel = document.getElementById('layer-picker');
+    if (!sel || !sel.value) return list;
+    const lid = Number(sel.value);
+    if (isNaN(lid)) return list;
+    return list.filter(function (obj) {
+        const lids = obj.layerIds;
+        if (!lids || !lids.length) return false;
+        return lids.some(function (x) { return Number(x) === lid; });
+    });
 }
 
 function openInspector(obj) {
@@ -44,6 +106,9 @@ function openInspector(obj) {
     }
     bodyHtml += '<strong>Lat:</strong> ' + obj.latitude.toFixed(6) + '<br>';
     bodyHtml += '<strong>Lng:</strong> ' + obj.longitude.toFixed(6);
+    if (obj.layerIds && obj.layerIds.length) {
+        bodyHtml += '<br><strong>Layers:</strong> #' + obj.layerIds.join(', #');
+    }
 
     document.getElementById('inspector-body').innerHTML = bodyHtml;
 
@@ -411,7 +476,7 @@ function placeWorldSpacePermanentCube() {
         resolveLatLngThen(function (lat, lng) {
             function offlineDrop() {
                 var id = 'world-placed-' + Date.now();
-                var hash = selectedAssetHash();
+                var hash = selectedPropHash();
                 spawnWorldCubeEntity(scene, id, wx, wy, wz, hash);
                 appendWorldPlacementSession({kind: 'cube', id: id, x: wx, y: wy, z: wz, fileHash: hash, savedAt: Date.now()});
                 showMessage('no gps / server — saved local only', true);
@@ -602,8 +667,9 @@ function submitPlace(lat, lng) {
         if (txt.length > 0) formData.append('content', txt);
     } else {
         formData.append('type', 'prop');
-        formData.append('fileHash', selectedAssetHash());
+        formData.append('fileHash', selectedPropHash());
     }
+    appendLayerIfAny(formData);
 
     fetch(API_URL, {
         method: 'POST',
@@ -641,8 +707,9 @@ function submitWorldPlaceWithAr(lat, lng, wx, wy, wz, isSignpost) {
         if (txt.length > 0) formData.append('content', txt);
     } else {
         formData.append('type', 'prop');
-        formData.append('fileHash', selectedAssetHash());
+        formData.append('fileHash', selectedPropHash());
     }
+    appendLayerIfAny(formData);
     return fetch(API_URL, {
         method: 'POST',
         credentials: 'same-origin',
@@ -760,38 +827,89 @@ function placeAtGps() {
     });
 }
 
-// shared cube/asset body — sized 0.5m default cube, or a-gltf-model if fileHash is "asset:N".
+// shared cube/asset body — glTF if "asset:N", else preset shapes, else legacy labeled cube.
 // returns the array of clickable elements added.
 function appendPropBody(parent, obj) {
     var assetId = parseAssetId(obj.fileHash);
     var clickables = [];
     if (assetId) {
-        // a-frame core has no <a-gltf-model> primitive — use the gltf-model
-        // component on a plain entity, with the url() wrapper it requires for
-        // direct (non-asset) URLs.
         var model = document.createElement('a-entity');
         model.setAttribute('gltf-model', 'url(' + ASSETS_URL + '/' + assetId + ')');
         model.setAttribute('position', '0 0 0');
         parent.appendChild(model);
         clickables.push(model);
-    } else {
-        var box = document.createElement('a-box');
-        box.setAttribute('width', '0.5');
-        box.setAttribute('height', '0.5');
-        box.setAttribute('depth', '0.5');
-        box.setAttribute('position', '0 0 0');
-        box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
-        parent.appendChild(box);
-        clickables.push(box);
-        var tag = document.createElement('a-text');
-        tag.setAttribute('value', (obj.fileHash || 'cube').slice(0, 20));
-        tag.setAttribute('align', 'center');
-        tag.setAttribute('position', '0 0.45 0');
-        tag.setAttribute('scale', '0.7 0.7 0.7');
-        tag.setAttribute('color', '#ffffff');
-        parent.appendChild(tag);
-        clickables.push(tag);
+        return clickables;
     }
+    var preset = parsePresetKind(obj.fileHash);
+    if (preset === 'bread') {
+        var loaf = document.createElement('a-box');
+        loaf.setAttribute('width', '0.5');
+        loaf.setAttribute('height', '0.28');
+        loaf.setAttribute('depth', '0.72');
+        loaf.setAttribute('position', '0 0.14 0');
+        loaf.setAttribute('material', 'color: #c9a227; opacity: 0.95; roughness: 0.78; metalness: 0.06');
+        parent.appendChild(loaf);
+        clickables.push(loaf);
+        var dome = document.createElement('a-sphere');
+        dome.setAttribute('radius', '0.16');
+        dome.setAttribute('position', '0 0.38 0.12');
+        dome.setAttribute('scale', '1 0.55 1');
+        dome.setAttribute('material', 'color: #e8d4a8; roughness: 0.82');
+        parent.appendChild(dome);
+        clickables.push(dome);
+        return clickables;
+    }
+    if (preset === 'stars') {
+        var grp = document.createElement('a-entity');
+        grp.setAttribute('position', '0 0.35 0');
+        var colors = ['#ffe082', '#fff9c4', '#ffecb3'];
+        for (var i = 0; i < 5; i++) {
+            var spike = document.createElement('a-tetrahedron');
+            var ang = (i / 5) * Math.PI * 2;
+            var r = 0.22;
+            spike.setAttribute('radius', '0.12');
+            spike.setAttribute('position', (Math.cos(ang) * r) + ' 0 ' + (Math.sin(ang) * r));
+            spike.setAttribute('rotation', (i * 31) + ' ' + (i * 17) + ' 0');
+            spike.setAttribute('material', 'color: ' + colors[i % colors.length] +
+                '; emissive: #b8860b; emissiveIntensity: 0.45; metalness: 0.22; roughness: 0.38');
+            grp.appendChild(spike);
+            clickables.push(spike);
+        }
+        var core = document.createElement('a-octahedron');
+        core.setAttribute('radius', '0.1');
+        core.setAttribute('material', 'color: #fffde7; emissive: #ffc107; emissiveIntensity: 0.55; metalness: 0.28; roughness: 0.22');
+        grp.appendChild(core);
+        clickables.push(core);
+        parent.appendChild(grp);
+        return clickables;
+    }
+    if (preset === 'cube') {
+        var boxC = document.createElement('a-box');
+        boxC.setAttribute('width', '0.5');
+        boxC.setAttribute('height', '0.5');
+        boxC.setAttribute('depth', '0.5');
+        boxC.setAttribute('position', '0 0 0');
+        boxC.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
+        parent.appendChild(boxC);
+        clickables.push(boxC);
+        return clickables;
+    }
+    var box = document.createElement('a-box');
+    box.setAttribute('width', '0.5');
+    box.setAttribute('height', '0.5');
+    box.setAttribute('depth', '0.5');
+    box.setAttribute('position', '0 0 0');
+    box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
+    parent.appendChild(box);
+    clickables.push(box);
+    var tag = document.createElement('a-text');
+    tag.setAttribute('value', (obj.fileHash || 'cube').slice(0, 20));
+    tag.setAttribute('align', 'center');
+    tag.setAttribute('position', '0 0.45 0');
+    tag.setAttribute('scale', '0.7 0.7 0.7');
+    tag.setAttribute('color', '#ffffff');
+    parent.appendChild(tag);
+    clickables.push(tag);
     return clickables;
 }
 
@@ -975,6 +1093,7 @@ window.onload = () => {
 
     syncPlaceHint();
     loadAssetPicker();
+    loadLayerPicker();
     loadObjects();
 };
 
@@ -1034,14 +1153,15 @@ async function loadObjects() {
         }
         const objects = await response.json();
         clearPlacedFromScene(scene);
+        const filtered = filterObjectsByLayer(objects);
 
-        statusObj.setAttribute('data-original', 'loaded ' + objects.length + ' things');
+        statusObj.setAttribute('data-original', 'loaded ' + filtered.length + ' things');
         if (!window.msgTimeout) {
-            statusObj.innerText = 'loaded ' + objects.length + ' things';
+            statusObj.innerText = 'loaded ' + filtered.length + ' things';
             statusObj.style.color = '#aaa';
         }
 
-        placeObjectsInScene(scene, objects);
+        placeObjectsInScene(scene, filtered);
         restoreWorldPlacementsFromSession(scene);
     } catch (err) {
         if (statusObj) showMessage('load failed (network?)', true);

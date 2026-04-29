@@ -1,24 +1,41 @@
 const API_URL = window.WARP.apiUrl;
 const ASSETS_URL = window.WARP.assetsUrl;
 const sessionUserId = window.WARP.userId;
+const LAYER_FILTER_KEY = 'warp-active-layer-id';
 let selectedObjectId = null;
 
-// fileHash convention: "asset:<id>" → uploaded glTF, anything else → default cube.
+// fileHash convention: "asset:<id>" → uploaded glTF; "preset:*" → built-in shape; legacy hashes → cube.
 function parseAssetId(fileHash) {
     if (!fileHash || typeof fileHash !== 'string') return null;
     const m = fileHash.match(/^asset:(\d+)$/);
     return m ? m[1] : null;
 }
 
-function selectedAssetHash() {
+/** @returns {'cube'|'bread'|'stars'|null} null = legacy / unknown (render as labeled cube) */
+function parsePresetKind(fileHash) {
+    if (!fileHash || typeof fileHash !== 'string') return 'cube';
+    if (fileHash.startsWith('preset:')) {
+        const p = fileHash.slice(7);
+        if (p === 'bread' || p === 'stars' || p === 'cube') return p;
+        return 'cube';
+    }
+    if (fileHash === 'demo_cube' || fileHash === 'default_box_hash') return 'cube';
+    return null;
+}
+
+function selectedPropHash() {
     const sel = document.getElementById('asset-picker');
-    if (!sel || !sel.value) return 'demo_cube';
-    return 'asset:' + sel.value;
+    if (!sel || !sel.value) return 'preset:cube';
+    const v = sel.value;
+    if (typeof v === 'string' && v.startsWith('preset:')) return v;
+    return 'asset:' + v;
 }
 
 function loadAssetPicker() {
+    const uploads = document.getElementById('asset-picker-uploads');
     const sel = document.getElementById('asset-picker');
-    if (!sel) return;
+    const parent = uploads || sel;
+    if (!parent || !ASSETS_URL) return;
     fetch(ASSETS_URL, {credentials: 'same-origin'})
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (assets) {
@@ -26,10 +43,56 @@ function loadAssetPicker() {
                 const opt = document.createElement('option');
                 opt.value = a.id;
                 opt.textContent = a.displayName + ' (#' + a.id + ')';
-                sel.appendChild(opt);
+                if (uploads) uploads.appendChild(opt);
+                else sel.appendChild(opt);
             });
         })
-        .catch(function () { /* leave default option only */ });
+        .catch(function () { /* leave presets only */ });
+}
+
+function loadLayerPicker() {
+    const sel = document.getElementById('layer-picker');
+    const url = window.WARP && window.WARP.layersUrl;
+    if (!sel || !url) return;
+    fetch(url, {credentials: 'same-origin'})
+        .then(function (r) { return r.ok ? r.json() : []; })
+        .then(function (layers) {
+            while (sel.options.length > 1) sel.remove(1);
+            layers.forEach(function (L) {
+                const opt = document.createElement('option');
+                opt.value = String(L.layerId);
+                opt.textContent = L.name;
+                sel.appendChild(opt);
+            });
+            const saved = localStorage.getItem(LAYER_FILTER_KEY);
+            if (saved && Array.prototype.some.call(sel.options, function (o) { return o.value === saved; })) {
+                sel.value = saved;
+            }
+            if (document.querySelector('a-scene')) loadObjects();
+        })
+        .catch(function () { /* All layers only */ });
+    sel.addEventListener('change', function () {
+        localStorage.setItem(LAYER_FILTER_KEY, sel.value || '');
+        loadObjects();
+    });
+}
+
+function filterObjectsByLayer(list) {
+    const sel = document.getElementById('layer-picker');
+    if (!sel || !sel.value) return list;
+    const lid = Number(sel.value);
+    if (isNaN(lid)) return list;
+    return list.filter(function (obj) {
+        const lids = obj.layerIds;
+        if (!lids || !lids.length) return false;
+        return lids.some(function (x) { return Number(x) === lid; });
+    });
+}
+
+function clearPlacedObjects(scene) {
+    if (!scene) return;
+    scene.querySelectorAll('[id^="obj-"]').forEach(function (el) { el.remove(); });
+    placedIds.clear();
 }
 
 function openInspector(obj) {
@@ -44,6 +107,9 @@ function openInspector(obj) {
     }
     bodyHtml += '<strong>Lat:</strong> ' + obj.latitude.toFixed(6) + '<br>';
     bodyHtml += '<strong>Lng:</strong> ' + obj.longitude.toFixed(6);
+    if (obj.layerIds && obj.layerIds.length) {
+        bodyHtml += '<br><strong>Layers:</strong> #' + obj.layerIds.join(', #');
+    }
 
     document.getElementById('inspector-body').innerHTML = bodyHtml;
 
@@ -243,6 +309,58 @@ function lockOriginGps() {
 
 // ---- entity factories (mirror world.jsp's visual style, minus gps-entity-place) ----
 
+function appendPresetShapes(inner, kind, obj) {
+    if (kind === 'bread') {
+        const loaf = document.createElement('a-box');
+        loaf.setAttribute('width', '0.5');
+        loaf.setAttribute('height', '0.28');
+        loaf.setAttribute('depth', '0.72');
+        loaf.setAttribute('position', '0 0.14 0');
+        loaf.setAttribute('material', 'color: #c9a227; roughness: 0.78; metalness: 0.06');
+        inner.appendChild(loaf);
+        setupObjectClick(loaf, obj);
+        const dome = document.createElement('a-sphere');
+        dome.setAttribute('radius', '0.16');
+        dome.setAttribute('position', '0 0.38 0.12');
+        dome.setAttribute('scale', '1 0.55 1');
+        dome.setAttribute('material', 'color: #e8d4a8; roughness: 0.82');
+        inner.appendChild(dome);
+        setupObjectClick(dome, obj);
+        return;
+    }
+    if (kind === 'stars') {
+        const grp = document.createElement('a-entity');
+        grp.setAttribute('position', '0 0.35 0');
+        const colors = ['#ffe082', '#fff9c4', '#ffecb3'];
+        for (let i = 0; i < 5; i++) {
+            const spike = document.createElement('a-tetrahedron');
+            const ang = (i / 5) * Math.PI * 2;
+            const r = 0.22;
+            spike.setAttribute('radius', '0.12');
+            spike.setAttribute('position', (Math.cos(ang) * r) + ' 0 ' + (Math.sin(ang) * r));
+            spike.setAttribute('rotation', (i * 31) + ' ' + (i * 17) + ' 0');
+            spike.setAttribute('material', 'color: ' + colors[i % colors.length] +
+                '; emissive: #b8860b; emissiveIntensity: 0.45; metalness: 0.22; roughness: 0.38');
+            grp.appendChild(spike);
+            setupObjectClick(spike, obj);
+        }
+        const core = document.createElement('a-octahedron');
+        core.setAttribute('radius', '0.1');
+        core.setAttribute('material', 'color: #fffde7; emissive: #ffc107; emissiveIntensity: 0.55; metalness: 0.28; roughness: 0.22');
+        grp.appendChild(core);
+        setupObjectClick(core, obj);
+        inner.appendChild(grp);
+        return;
+    }
+    const box = document.createElement('a-box');
+    box.setAttribute('width', '0.5');
+    box.setAttribute('height', '0.5');
+    box.setAttribute('depth', '0.5');
+    box.setAttribute('material', 'color: #d37f8f; metalness: 0.1; roughness: 0.7');
+    inner.appendChild(box);
+    setupObjectClick(box, obj);
+}
+
 function buildCubeEntity(obj, x, z) {
     const id = obj.id;
     const scale = obj.scale;
@@ -267,13 +385,18 @@ function buildCubeEntity(obj, x, z) {
         inner.appendChild(model);
         setupObjectClick(model, obj);
     } else {
-        const box = document.createElement('a-box');
-        box.setAttribute('width', '0.5');
-        box.setAttribute('height', '0.5');
-        box.setAttribute('depth', '0.5');
-        box.setAttribute('material', 'color: #d37f8f; metalness: 0.1; roughness: 0.7');
-        inner.appendChild(box);
-        setupObjectClick(box, obj);
+        const preset = parsePresetKind(obj.fileHash);
+        if (preset != null) {
+            appendPresetShapes(inner, preset, obj);
+        } else {
+            const box = document.createElement('a-box');
+            box.setAttribute('width', '0.5');
+            box.setAttribute('height', '0.5');
+            box.setAttribute('depth', '0.5');
+            box.setAttribute('material', 'color: #d37f8f; metalness: 0.1; roughness: 0.7');
+            inner.appendChild(box);
+            setupObjectClick(box, obj);
+        }
     }
     root.appendChild(inner);
     return root;
@@ -340,13 +463,14 @@ function loadObjects() {
         })
         .then(function (list) {
             if (!Array.isArray(list)) list = (list && list.objects) || [];
-            let drawn = 0;
+            list = filterObjectsByLayer(list);
+            clearPlacedObjects(scene);
             list.forEach(function (obj) {
-                const before = placedIds.size;
                 placeObjectInScene(scene, obj);
-                if (placedIds.size > before) drawn++;
             });
-            setStatus('status-objects', '<strong>Props</strong>: ' + placedIds.size + ' nearby');
+            const sel = document.getElementById('layer-picker');
+            const layerNote = (sel && sel.value) ? ' (layer filter)' : '';
+            setStatus('status-objects', '<strong>Props</strong>: ' + placedIds.size + ' nearby' + layerNote);
             return list;
         })
         .catch(function () {
@@ -381,8 +505,10 @@ function placeAtCamera() {
         if (txt.length > 0) fd.append('content', txt);
     } else {
         fd.append('type', 'prop');
-        fd.append('fileHash', selectedAssetHash());
+        fd.append('fileHash', selectedPropHash());
     }
+    const lp = document.getElementById('layer-picker');
+    if (lp && lp.value) fd.append('layerId', lp.value);
     fetch(API_URL, {
         method: 'POST',
         credentials: 'same-origin',
@@ -441,6 +567,7 @@ document.addEventListener('DOMContentLoaded', function () {
     }
 
     loadAssetPicker();
+    loadLayerPicker();
     setStatus('status-tracking', '<strong>Tracking</strong>: locking GPS origin…');
     lockOriginGps()
         .then(function (best) {

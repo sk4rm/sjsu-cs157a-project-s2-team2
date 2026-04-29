@@ -104,8 +104,16 @@
         <label for="signpost-text"></label>
         <input id="signpost-text" class="signpost-input" type="text" maxlength="80"
                placeholder="signpost message (signpost mode only)" disabled>
-        <select id="asset-picker" class="signpost-input" title="3D model for cube placements">
-            <option value="">default cube</option>
+        <select id="layer-picker" class="signpost-input" title="Filter view by layer; also tags new placements" aria-label="Layer filter">
+            <option value="">All layers</option>
+        </select>
+        <select id="asset-picker" class="signpost-input" title="Shape or uploaded model for cube placements">
+            <optgroup label="Standard props">
+                <option value="preset:cube" selected>Cube</option>
+                <option value="preset:bread">Bread</option>
+                <option value="preset:stars">Stars</option>
+            </optgroup>
+            <optgroup label="Your uploads" id="asset-picker-uploads"></optgroup>
         </select>
         <div class="place-hint" id="place-hint">drops where you're standing — XR tracking, no GPS jitter</div>
     </div>
@@ -147,6 +155,7 @@
     window.WARP = {
         apiUrl: '<%= request.getContextPath() %>/api/objects',
         assetsUrl: '<%= request.getContextPath() %>/api/assets',
+        layersUrl: '<%= request.getContextPath() %>/api/layers',
         commentsUrl: '<%= request.getContextPath() %>/api/comments',
         votesUrl: '<%= request.getContextPath() %>/api/votes',
         userId: <%= (Long) session.getAttribute("userId") %>

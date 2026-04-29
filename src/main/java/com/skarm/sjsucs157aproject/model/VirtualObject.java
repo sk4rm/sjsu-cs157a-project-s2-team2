@@ -1,5 +1,8 @@
 package com.skarm.sjsucs157aproject.model;
 
+import java.util.ArrayList;
+import java.util.List;
+
 public class VirtualObject {
     private long id;
     private long userId;
@@ -12,6 +15,8 @@ public class VirtualObject {
     private Double arY;
     private Double arZ;
     private Double arYawDeg;
+    /** Layers that include this object (from `includes`); empty if none. */
+    private final List<Long> layerIds = new ArrayList<>();
 
     public long getId() {
         return id;
@@ -91,5 +96,9 @@ public class VirtualObject {
 
     public void setArYawDeg(Double arYawDeg) {
         this.arYawDeg = arYawDeg;
+    }
+
+    public List<Long> getLayerIds() {
+        return layerIds;
     }
 }
