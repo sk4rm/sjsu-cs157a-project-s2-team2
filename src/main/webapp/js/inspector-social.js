@@ -42,7 +42,7 @@
     }
 
     /**
-     * Never pass an empty string to fetch(): it resolves to the current page URL (e.g. /world-xr),
+     * Never pass an empty string to fetch(): it resolves to the current page URL (e.g. /world),
      * which is GET-only → Jetty 405 "POST is not supported by this URL".
      */
     function absApiUrl(pathOrAbsolute) {

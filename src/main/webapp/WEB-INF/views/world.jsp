@@ -1,63 +1,74 @@
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <!DOCTYPE html>
+<%--
+    world.jsp — AR view: <video> camera background + A-Frame look-controls
+    (DeviceOrientation). GPS is consulted *once* at session start to anchor a
+    local origin so the scene doesn't swim with every fix. There is no SLAM/VIO
+    (not available on iOS Safari without a commercial WebAR license), so props
+    stay anchored to lat/lon but the camera does not follow you as you walk —
+    rotate the device to look around.
+--%>
 <html>
 
 <head>
-    <title>WARP - Camera View</title>
+    <title>WARP — World</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world.css">
+
+    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world.css?v=w1">
+
     <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
     <% if ("1".equals(request.getParameter("debug"))) { %>
     <script src="https://cdn.jsdelivr.net/npm/eruda"></script>
     <script>eruda.init();</script>
     <% } %>
+
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/gh/AR-js-org/AR.js@3.4.5/aframe/build/aframe-ar.js"></script>
 </head>
 
 <body data-warp-comments="<%= request.getContextPath() %>/api/comments"
       data-warp-votes="<%= request.getContextPath() %>/api/votes">
 
+<%-- Camera background. JS attaches a getUserMedia stream to .srcObject after
+     the user taps Start (iOS Safari needs the gesture for sensor permission). --%>
+<video id="camera-feed" autoplay playsinline muted></video>
+
 <div id="loading" class="loading-overlay">
-    <div id="loading-text" style="margin-bottom: 20px; font-size: 1.2rem;">Initializing WARP Engine...</div>
-    <div id="loading-sub" style="font-size: 0.8rem; color: #aaa;">Requesting Camera and GPS permissions</div>
-    <button id="retry-btn"
-            style="display:none; margin-top:20px; padding:10px 20px; border-radius:999px; border:1px solid white; background:none; color:white;"
-            onclick="location.reload()">Retry
-    </button>
+    <div id="loading-title" style="margin-bottom: 14px; font-size: 1.2rem;">WARP</div>
+    <div id="loading-sub" style="font-size: 0.85rem; color: #aaa; max-width: 280px; text-align: center; line-height: 1.4;">
+        Tap below to grant camera, motion, and GPS permissions. iOS won't ask without a tap.
+    </div>
+    <button id="start-btn" type="button" class="primary-cta">Start AR</button>
+    <button id="retry-btn" type="button" class="secondary-cta" style="display:none;" onclick="location.reload()">Retry</button>
 </div>
 
+<div id="toast" class="toast"></div>
+
 <div class="hud-top">
-    <a href="<%= request.getContextPath() %>/" class="hud-btn">← Exit World</a>
-    <a href="<%= request.getContextPath() %>/world-xr" class="hud-btn"
-       title="alternate: GPS-locked origin + device-orientation rotation (no SLAM, no scene swim)">XR mode</a>
-    <button type="button" class="hud-btn" onclick="placeWorldSpaceTestCube()"
-            title="dev: green cube on the ring, not glued to camera">
-        test world cube
-    </button>
+    <a href="<%= request.getContextPath() %>/" class="hud-btn">← Exit</a>
     <div class="status">
-        <div id="status-location"><strong>Location</strong>: Acquiring...</div>
-        <div id="status-objects" style="margin-top: 4px; color: #aaa;">Searching for props...</div>
+        <div id="status-tracking"><strong>Tracking</strong>: idle</div>
+        <div id="status-location" style="margin-top: 4px; color: #aaa;">GPS: pending</div>
+        <div id="status-objects" style="margin-top: 4px; color: #aaa;">Searching for props…</div>
     </div>
 </div>
 
-<div id="loc-prompt" class="loc-prompt" role="dialog" aria-label="location permission">
-    <p id="loc-prompt-text">warp uses your gps to place cubes and signposts. if you already tapped allow in settings, we
-        try to pick up coords automatically — or use the buttons below.</p>
-    <button type="button" class="loc-allow-btn" onclick="requestLocationPermission()">ask for location / refresh gps
-    </button>
-    <button type="button" class="secondary" onclick="dismissLocPrompt()">hide this bar</button>
-</div>
-
-<a-scene vr-mode-ui="enabled: false" embedded
-         arjs="sourceType: webcam; debugUIEnabled: false; antialias: true; alpha: true"
-         renderer="antialias: true; alpha: true">
-
-    <a-camera gps-camera="gpsMinDistance: 0.5; positionMinAccuracy: 20; minDistance: 0.1; gpsTimeInterval: 500"
-              gps-smoother="durationMs: 300"
-              rotation-reader>
+<a-scene
+        renderer="colorManagement: true; antialias: true; alpha: true"
+        vr-mode-ui="enabled: false"
+        embedded>
+    <%--
+      look-controls drives camera rotation from DeviceOrientation events.
+      magicWindowTrackingEnabled keeps it active outside VR mode. touch/mouse
+      drag is disabled so HUD taps don't accidentally rotate the view.
+    --%>
+    <a-camera id="xr-camera"
+              look-controls="magicWindowTrackingEnabled: true; touchEnabled: false; mouseEnabled: false"
+              wasd-controls="enabled: false"
+              position="0 1.5 0">
         <a-cursor color="#d37f8f" fuse="false" raycaster="objects: .clickable"></a-cursor>
     </a-camera>
+    <a-light type="ambient" intensity="0.7"></a-light>
+    <a-light type="directional" intensity="0.6" position="2 4 1"></a-light>
 </a-scene>
 
 <div class="hud-bottom">
@@ -66,12 +77,9 @@
             <button type="button" class="mode-btn on" id="mode-cube" onclick="setPlaceMode('cube')">cube</button>
             <button type="button" class="mode-btn" id="mode-sign" onclick="setPlaceMode('signpost')">signpost</button>
         </div>
-        <div class="place-modes">
-            <button type="button" class="mode-btn on" id="space-gps" onclick="setPlaceSpace('gps')">GPS</button>
-            <button type="button" class="mode-btn" id="space-world" onclick="setPlaceSpace('world')">world</button>
-        </div>
-        <input type="text" class="signpost-input" id="signpost-text" maxlength="250"
-               placeholder="signpost message (only for signpost)" disabled>
+        <label for="signpost-text"></label>
+        <input id="signpost-text" class="signpost-input" type="text" maxlength="80"
+               placeholder="signpost message (signpost mode only)" disabled>
         <select id="layer-picker" class="signpost-input" title="Filter view by layer; also tags new placements" aria-label="Layer filter">
             <option value="">All layers</option>
         </select>
@@ -83,14 +91,15 @@
             </optgroup>
             <optgroup label="Your uploads" id="asset-picker-uploads"></optgroup>
         </select>
-        <div class="place-hint" id="place-hint">gps updates from camera, or we ask browser once on place</div>
+        <div class="place-hint" id="place-hint">aim the green ring, then tap + to drop</div>
     </div>
-    <div class="action-button" onclick="onPlaceButton()" title="place here (GPS or world)">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+    <button class="action-button" onclick="placeAtCursor()" aria-label="place">
+        <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.4"
+             stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"></line>
             <line x1="5" y1="12" x2="19" y2="12"></line>
         </svg>
-    </div>
+    </button>
 </div>
 
 <div id="inspector" class="inspector">
@@ -107,8 +116,12 @@
     <div id="inspector-confirm" style="display:none; flex-direction:column; gap:6px;">
         <div style="font-size:0.85rem; color:#ff8b8b; text-align:center;">Confirm delete?</div>
         <div style="display:flex; gap:8px;">
-            <button type="button" class="delete-btn" style="flex:1; margin:0;" onclick="onDeleteConfirmed()">Yes, delete</button>
-            <button type="button" class="delete-btn" style="flex:1; margin:0; background:#444;" onclick="onDeleteCancelled()">Cancel</button>
+            <button type="button" class="delete-btn" style="flex:1; margin:0;" onclick="onDeleteConfirmed()">Yes,
+                delete
+            </button>
+            <button type="button" class="delete-btn" style="flex:1; margin:0; background:#444;"
+                    onclick="onDeleteCancelled()">Cancel
+            </button>
         </div>
     </div>
     <div id="inspector-social" class="inspector-social"></div>
@@ -132,9 +145,7 @@
         if (v) window.WARP.votesUrl = v;
     })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=ar2"></script>
-<script src="<%= request.getContextPath() %>/js/world.js"></script>
-
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=w1"></script>
+<script src="<%= request.getContextPath() %>/js/world.js?v=w1"></script>
 </body>
-
 </html>

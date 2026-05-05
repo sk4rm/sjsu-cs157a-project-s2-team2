@@ -4,13 +4,14 @@ const sessionUserId = window.WARP.userId;
 const LAYER_FILTER_KEY = 'warp-active-layer-id';
 let selectedObjectId = null;
 
-// fileHash convention: "asset:<id>" → uploaded glTF; "preset:*" → built-in shape; else legacy cube + label.
+// fileHash convention: "asset:<id>" → uploaded glTF; "preset:*" → built-in shape; legacy hashes → cube.
 function parseAssetId(fileHash) {
     if (!fileHash || typeof fileHash !== 'string') return null;
     const m = fileHash.match(/^asset:(\d+)$/);
     return m ? m[1] : null;
 }
 
+/** @returns {'cube'|'bread'|'stars'|null} null = legacy / unknown (render as labeled cube) */
 function parsePresetKind(fileHash) {
     if (!fileHash || typeof fileHash !== 'string') return 'cube';
     if (fileHash.startsWith('preset:')) {
@@ -30,11 +31,6 @@ function selectedPropHash() {
     return 'asset:' + v;
 }
 
-function appendLayerIfAny(formData) {
-    const lp = document.getElementById('layer-picker');
-    if (lp && lp.value) formData.append('layerId', lp.value);
-}
-
 function loadAssetPicker() {
     const uploads = document.getElementById('asset-picker-uploads');
     const sel = document.getElementById('asset-picker');
@@ -51,7 +47,7 @@ function loadAssetPicker() {
                 else sel.appendChild(opt);
             });
         })
-        .catch(function () { /* presets only */ });
+        .catch(function () { /* leave presets only */ });
 }
 
 function loadLayerPicker() {
@@ -72,10 +68,9 @@ function loadLayerPicker() {
             if (saved && Array.prototype.some.call(sel.options, function (o) { return o.value === saved; })) {
                 sel.value = saved;
             }
-            const scene = document.querySelector('a-scene');
-            if (scene) loadObjects();
+            if (originLat != null) loadObjects();
         })
-        .catch(function () { });
+        .catch(function () { /* All layers only */ });
     sel.addEventListener('change', function () {
         localStorage.setItem(LAYER_FILTER_KEY, sel.value || '');
         loadObjects();
@@ -92,6 +87,33 @@ function filterObjectsByLayer(list) {
         if (!lids || !lids.length) return false;
         return lids.some(function (x) { return Number(x) === lid; });
     });
+}
+
+function clearPlacedObjects(scene) {
+    if (!scene) return;
+    scene.querySelectorAll('[id^="obj-"]').forEach(function (el) { el.remove(); });
+    placedIds.clear();
+}
+
+// Reconcile the scene against a server-fresh list: remove placed entities
+// whose ids vanished, add new ones. Avoids the flicker that a
+// full-clear-and-redraw caused on every poll tick.
+function applyObjectsList(scene, list) {
+    if (!scene) return;
+    const fresh = new Set();
+    list.forEach(function (o) {
+        if (o && o.id != null) fresh.add(o.id);
+    });
+    const toRemove = [];
+    placedIds.forEach(function (id) {
+        if (!fresh.has(id)) toRemove.push(id);
+    });
+    toRemove.forEach(function (id) {
+        const el = document.getElementById('obj-' + id);
+        if (el) el.remove();
+        placedIds.delete(id);
+    });
+    list.forEach(function (obj) { placeObjectInScene(scene, obj); });
 }
 
 function openInspector(obj) {
@@ -119,7 +141,7 @@ function openInspector(obj) {
         deleteBtn.style.display = 'none';
     }
 
-    hideDeleteConfirm();
+    resetDeleteConfirm();
     document.getElementById('inspector').classList.add('show');
     if (typeof loadInspectorSocial === 'function') {
         loadInspectorSocial(obj.id);
@@ -129,15 +151,15 @@ function openInspector(obj) {
 function closeInspector() {
     document.getElementById('inspector').classList.remove('show');
     selectedObjectId = null;
-    hideDeleteConfirm();
+    resetDeleteConfirm();
     if (typeof clearInspectorSocial === 'function') {
         clearInspectorSocial();
     }
 }
 
-// native confirm() can pause the camera MediaStreamTrack on iOS Safari
-// (same family of bug as XR view). use inline two-step instead.
-function hideDeleteConfirm() {
+// inline two-step confirm: native confirm() can pause the camera
+// MediaStreamTrack on iOS Safari, which causes a brief black-frame flicker.
+function resetDeleteConfirm() {
     const conf = document.getElementById('inspector-confirm');
     if (conf) conf.style.display = 'none';
 }
@@ -161,18 +183,19 @@ function onDeleteConfirmed() {
         method: 'DELETE', credentials: 'same-origin'
     }).then(function (resp) {
         if (resp.ok) {
-            showMessage('Object deleted');
+            showToast('Object deleted');
             const el = document.getElementById('obj-' + id);
             if (el) el.remove();
+            placedIds.delete(id);
             closeInspector();
         } else {
-            return readApiError(resp).then(function (msg) {
-                showMessage('Delete failed: ' + msg, true);
+            return resp.text().then(function (msg) {
+                showToast('Delete failed: ' + msg.slice(0, 50), true);
                 onDeleteCancelled();
             });
         }
-    }).catch(function (err) {
-        showMessage('Network error on delete', true);
+    }).catch(function () {
+        showToast('Network error on delete', true);
         onDeleteCancelled();
     });
 }
@@ -180,200 +203,395 @@ function onDeleteConfirmed() {
 function setupObjectClick(el, obj) {
     el.classList.add('clickable');
     el.addEventListener('click', function (evt) {
-        // Prevent multiple objects from triggering at once if they overlap
         evt.stopPropagation();
         openInspector(obj);
     });
 }
 
-let currentPosition = null;
-let lastGpsAccuracy = null;
 let placeMode = 'cube';
-// gps = post lat/lng, world = drop where the ring is (scene root)
-let placeSpace = 'gps';
 
-// smooth the camera between AR.js GPS fixes — without this the scene
-// snaps every ~1s when watchPosition delivers a new sample.
-if (window.AFRAME && !AFRAME.components['gps-smoother']) {
-    AFRAME.registerComponent('gps-smoother', {
-        schema: {durationMs: {default: 300}}, init: function () {
-            this.target = new THREE.Vector3();
-            this.displayed = new THREE.Vector3();
-            this.haveTarget = false;
-            var self = this;
-            this._onFix = function () {
-                // wait one tick so AR.js has applied the new camera pos
-                setTimeout(function () {
-                    self.target.copy(self.el.object3D.position);
-                    if (!self.haveTarget) {
-                        self.displayed.copy(self.target);
-                        self.haveTarget = true;
-                    }
-                }, 0);
-            };
-            window.addEventListener('gps-camera-update-position', this._onFix);
-        }, remove: function () {
-            window.removeEventListener('gps-camera-update-position', this._onFix);
-        }, tick: function (time, dt) {
-            if (!this.haveTarget) return;
-            var dur = this.data.durationMs || 300;
-            var alpha = Math.min(1, dt / dur);
-            this.displayed.lerp(this.target, alpha);
-            this.el.object3D.position.copy(this.displayed);
-        }
-    });
-}
+// GPS-anchored origin: lat/lon at session start. Everything else is local meters.
+let originLat = null, originLon = null, originAcc = null;
+const M_PER_DEG_LAT = 111320; // close enough for short distances
+let placedIds = new Set();
+let cameraStream = null;
 
 function setPlaceMode(mode) {
     placeMode = mode;
     document.getElementById('mode-cube').classList.toggle('on', mode === 'cube');
     document.getElementById('mode-sign').classList.toggle('on', mode === 'signpost');
-    const inp = document.getElementById('signpost-text');
-    inp.disabled = mode !== 'signpost';
-    syncPlaceHint();
+    document.getElementById('signpost-text').disabled = (mode !== 'signpost');
 }
 
-function setPlaceSpace(space) {
-    placeSpace = space;
-    document.getElementById('space-gps').classList.toggle('on', space === 'gps');
-    document.getElementById('space-world').classList.toggle('on', space === 'world');
-    syncPlaceHint();
+function showToast(msg, isErr) {
+    const t = document.getElementById('toast');
+    t.textContent = msg;
+    t.classList.toggle('err', !!isErr);
+    t.classList.add('show');
+    clearTimeout(t._h);
+    t._h = setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-function syncPlaceHint() {
-    const el = document.getElementById('place-hint');
+function setStatus(id, html) {
+    const el = document.getElementById(id);
+    if (el) el.innerHTML = html;
+}
+
+function hideLoading() {
+    const el = document.getElementById('loading');
     if (!el) return;
-    if (placeSpace === 'world') {
-        if (placeMode === 'signpost') {
-            el.innerText = 'aim the ring, type message, tap + — signpost stays in world space';
-        } else {
-            el.innerText = 'aim the green ring, then tap + — cube stays put as you move';
-        }
-    } else {
-        el.innerText = placeMode === 'cube' ? 'drops a pink-ish cube at your coords' : 'drops a pole + board with your message';
-    }
+    el.style.opacity = '0';
+    setTimeout(() => el.remove(), 500);
 }
 
-function readApiError(response) {
-    return response.text().then(function (t) {
-        return t.slice(0, 120) || response.statusText;
+function showFatal(msg) {
+    const sub = document.getElementById('loading-sub');
+    const start = document.getElementById('start-btn');
+    const retry = document.getElementById('retry-btn');
+    if (sub) {
+        sub.innerText = msg;
+        sub.style.color = '#ff8b8b';
+    }
+    if (start) start.style.display = 'none';
+    if (retry) retry.style.display = 'inline-block';
+}
+
+// lat/lon → local meters (equirectangular, valid for sub-km distances)
+function latLonToLocal(lat, lon) {
+    if (originLat == null) return null;
+    const dLat = lat - originLat;
+    const dLon = lon - originLon;
+    const x = dLon * Math.cos(originLat * Math.PI / 180) * M_PER_DEG_LAT;
+    const z = -dLat * M_PER_DEG_LAT; // -Z is "north" by convention here
+    return {x: x, z: z};
+}
+
+function localToLatLon(x, z) {
+    if (originLat == null) return null;
+    const dLat = -z / M_PER_DEG_LAT;
+    const dLon = x / (Math.cos(originLat * Math.PI / 180) * M_PER_DEG_LAT);
+    return {lat: originLat + dLat, lon: originLon + dLon};
+}
+
+// sample-and-pick GPS burst: collect samples for WINDOW ms, accept the best
+// one if it beats GATE; settle early on any sub-EARLY-meter fix.
+function lockOriginGps() {
+    return new Promise(function (resolve, reject) {
+        if (!navigator.geolocation) {
+            reject(new Error('no-geo'));
+            return;
+        }
+        let best = null;
+        let watchId = null;
+        let settled = false;
+        const GATE = 25;       // meters: accept if best fix is within this
+        const WINDOW = 4500;   // ms: sampling burst
+        const EARLY = 8;       // meters: settle immediately on a fix this good
+
+        function settle() {
+            if (settled) return;
+            settled = true;
+            if (watchId != null) {
+                try { navigator.geolocation.clearWatch(watchId); } catch (e) {}
+            }
+            if (!best) {
+                reject(new Error('no-fix'));
+                return;
+            }
+            if (best.acc > GATE) {
+                reject(new Error('weak:' + Math.round(best.acc)));
+                return;
+            }
+            resolve(best);
+        }
+
+        try {
+            watchId = navigator.geolocation.watchPosition(function (pos) {
+                const acc = pos.coords.accuracy;
+                if (best === null || acc < best.acc) {
+                    best = {lat: pos.coords.latitude, lon: pos.coords.longitude, acc: acc};
+                }
+                if (acc <= EARLY) settle();
+            }, function (err) {
+                if (!best && (err.code === 1 || err.code === 2)) {
+                    settled = true;
+                    if (watchId != null) {
+                        try { navigator.geolocation.clearWatch(watchId); } catch (e) {}
+                    }
+                    reject(new Error(err.code === 1 ? 'denied' : 'unavailable'));
+                }
+            }, {enableHighAccuracy: true, timeout: 25000, maximumAge: 0});
+        } catch (e) {
+            reject(e);
+            return;
+        }
+        setTimeout(settle, WINDOW);
     });
 }
 
-// clear server-spawned stuff before we redraw (obj-* ids)
-function clearPlacedFromScene(scene) {
-    if (!scene) return;
-    scene.querySelectorAll('[id^="obj-"]').forEach(el => el.remove());
-}
-
-// localStorage for world mode only; db props still come from /api
-var WORLD_SESSION_KEY = 'warp-world-placements-v1';
-
-function appendWorldPlacementSession(rec) {
-    try {
-        var list = JSON.parse(localStorage.getItem(WORLD_SESSION_KEY) || '[]');
-        if (!Array.isArray(list)) list = [];
-        list.push(rec);
-        localStorage.setItem(WORLD_SESSION_KEY, JSON.stringify(list));
-        console.log('[ARP] session saved:', rec.kind, rec.id);
-    } catch (e) {
-        console.warn('[ARP] session save failed', e);
-    }
-}
-
-function spawnWorldCubeEntity(scene, id, wx, wy, wz, fileHash) {
-    var root = document.createElement('a-entity');
-    root.setAttribute('id', id);
-    root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
-    var inner = document.createElement('a-entity');
-    inner.setAttribute('position', '0 0.25 0');
-    appendPropBody(inner, {fileHash: fileHash});
-    root.appendChild(inner);
-    scene.appendChild(root);
-}
-
-function spawnWorldSignpostEntity(scene, id, wx, wy, wz, msg) {
-    var root = document.createElement('a-entity');
-    root.setAttribute('id', id);
-    root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
-    var inner = document.createElement('a-entity');
-    inner.setAttribute('position', '0 0 0');
-    fillSignpostInner(inner, msg);
-    root.appendChild(inner);
-    scene.appendChild(root);
-}
-
-function restoreWorldPlacementsFromSession(scene) {
-    function run() {
-        var list = [];
-        try {
-            list = JSON.parse(localStorage.getItem(WORLD_SESSION_KEY) || '[]');
-        } catch (e) {
+// iOS Safari ≥13 gates DeviceOrientationEvent behind a per-origin permission
+// that *must* be requested from inside a user-gesture handler. Android Chrome
+// has no such gate — it returns true immediately. Resolves true on grant or
+// when the API isn't gated; false if the user denied.
+function requestOrientationPermission() {
+    return new Promise(function (resolve) {
+        if (typeof DeviceOrientationEvent === 'undefined' ||
+            typeof DeviceOrientationEvent.requestPermission !== 'function') {
+            resolve(true);
             return;
         }
-        if (!Array.isArray(list)) return;
-        var n = 0;
-        list.forEach(function (rec) {
-            if (!rec || !rec.id || document.getElementById(rec.id)) return;
-            if (rec.kind === 'cube' && rec.x != null && rec.y != null && rec.z != null) {
-                spawnWorldCubeEntity(scene, rec.id, rec.x, rec.y, rec.z, rec.fileHash);
-                n++;
-            } else if (rec.kind === 'signpost' && rec.content != null && rec.x != null && rec.y != null && rec.z != null) {
-                spawnWorldSignpostEntity(scene, rec.id, rec.x, rec.y, rec.z, rec.content);
-                n++;
-            }
-        });
-        if (n > 0) console.log('[ARP] restored', n, 'world placements from localStorage');
-    }
-
-    if (scene.hasLoaded) {
-        run();
-    } else {
-        scene.addEventListener('loaded', run, {once: true});
-    }
+        DeviceOrientationEvent.requestPermission()
+            .then(function (state) { resolve(state === 'granted'); })
+            .catch(function () { resolve(false); });
+    });
 }
 
-// middle of screen ray -> y=0 floor, else 2m in front of you
-function computeWorldPlacementTarget(scene) {
+// rear-facing camera, sized to fill the viewport. We don't constrain
+// resolution — the browser picks a sensible default and the <video> element's
+// CSS object-fit: cover handles aspect.
+function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        return Promise.reject(new Error('getUserMedia not supported'));
+    }
+    const constraints = {
+        video: {facingMode: {ideal: 'environment'}},
+        audio: false
+    };
+    return navigator.mediaDevices.getUserMedia(constraints)
+        .then(function (stream) {
+            cameraStream = stream;
+            const video = document.getElementById('camera-feed');
+            video.srcObject = stream;
+            // playsinline + muted are already in the markup; play() returns a
+            // Promise that rejects on iOS if the call wasn't from a gesture,
+            // but we *are* in the Start handler so it works.
+            return video.play().catch(function () { /* autoplay race; harmless */ });
+        });
+}
+
+// ---- entity factories ----
+
+function appendPresetShapes(inner, kind, obj) {
+    if (kind === 'bread') {
+        const loaf = document.createElement('a-box');
+        loaf.setAttribute('width', '0.5');
+        loaf.setAttribute('height', '0.28');
+        loaf.setAttribute('depth', '0.72');
+        loaf.setAttribute('position', '0 0.14 0');
+        loaf.setAttribute('material', 'color: #c9a227; roughness: 0.78; metalness: 0.06');
+        inner.appendChild(loaf);
+        setupObjectClick(loaf, obj);
+        const dome = document.createElement('a-sphere');
+        dome.setAttribute('radius', '0.16');
+        dome.setAttribute('position', '0 0.38 0.12');
+        dome.setAttribute('scale', '1 0.55 1');
+        dome.setAttribute('material', 'color: #e8d4a8; roughness: 0.82');
+        inner.appendChild(dome);
+        setupObjectClick(dome, obj);
+        return;
+    }
+    if (kind === 'stars') {
+        const grp = document.createElement('a-entity');
+        grp.setAttribute('position', '0 0.35 0');
+        const colors = ['#ffe082', '#fff9c4', '#ffecb3'];
+        for (let i = 0; i < 5; i++) {
+            const spike = document.createElement('a-tetrahedron');
+            const ang = (i / 5) * Math.PI * 2;
+            const r = 0.22;
+            spike.setAttribute('radius', '0.12');
+            spike.setAttribute('position', (Math.cos(ang) * r) + ' 0 ' + (Math.sin(ang) * r));
+            spike.setAttribute('rotation', (i * 31) + ' ' + (i * 17) + ' 0');
+            spike.setAttribute('material', 'color: ' + colors[i % colors.length] +
+                '; emissive: #b8860b; emissiveIntensity: 0.45; metalness: 0.22; roughness: 0.38');
+            grp.appendChild(spike);
+            setupObjectClick(spike, obj);
+        }
+        const core = document.createElement('a-octahedron');
+        core.setAttribute('radius', '0.1');
+        core.setAttribute('material', 'color: #fffde7; emissive: #ffc107; emissiveIntensity: 0.55; metalness: 0.28; roughness: 0.22');
+        grp.appendChild(core);
+        setupObjectClick(core, obj);
+        inner.appendChild(grp);
+        return;
+    }
+    const box = document.createElement('a-box');
+    box.setAttribute('width', '0.5');
+    box.setAttribute('height', '0.5');
+    box.setAttribute('depth', '0.5');
+    box.setAttribute('material', 'color: #d37f8f; metalness: 0.1; roughness: 0.7');
+    inner.appendChild(box);
+    setupObjectClick(box, obj);
+}
+
+function buildCubeEntity(obj, x, z) {
+    const id = obj.id;
+    const scale = obj.scale;
+    const yawDeg = obj.arYawDeg;
+    const root = document.createElement('a-entity');
+    root.setAttribute('id', 'obj-' + id);
+    root.setAttribute('position', x + ' 0 ' + z);
+    const inner = document.createElement('a-entity');
+    if (yawDeg != null && !isNaN(yawDeg)) {
+        inner.setAttribute('rotation', '0 ' + (-yawDeg) + ' 0');
+    }
+    const s = scale || 1;
+    inner.setAttribute('scale', s + ' ' + s + ' ' + s);
+    inner.setAttribute('position', '0 0.25 0');
+    const assetId = parseAssetId(obj.fileHash);
+    if (assetId) {
+        // a-frame core has no <a-gltf-model> primitive — use the gltf-model
+        // component on a plain entity, with the url() wrapper it requires for
+        // direct (non-asset) URLs.
+        const model = document.createElement('a-entity');
+        model.setAttribute('gltf-model', 'url(' + ASSETS_URL + '/' + assetId + ')');
+        inner.appendChild(model);
+        setupObjectClick(model, obj);
+    } else {
+        const preset = parsePresetKind(obj.fileHash);
+        if (preset != null) {
+            appendPresetShapes(inner, preset, obj);
+        } else {
+            const box = document.createElement('a-box');
+            box.setAttribute('width', '0.5');
+            box.setAttribute('height', '0.5');
+            box.setAttribute('depth', '0.5');
+            box.setAttribute('material', 'color: #d37f8f; metalness: 0.1; roughness: 0.7');
+            inner.appendChild(box);
+            setupObjectClick(box, obj);
+        }
+    }
+    root.appendChild(inner);
+    return root;
+}
+
+function buildSignpostEntity(obj, x, z) {
+    const id = obj.id;
+    const scale = obj.scale;
+    const yawDeg = obj.arYawDeg;
+    const text = obj.content;
+    const root = document.createElement('a-entity');
+    root.setAttribute('id', 'obj-' + id);
+    root.setAttribute('position', x + ' 0 ' + z);
+    const inner = document.createElement('a-entity');
+    if (yawDeg != null && !isNaN(yawDeg)) {
+        inner.setAttribute('rotation', '0 ' + (-yawDeg) + ' 0');
+    }
+    const s = scale || 1;
+    inner.setAttribute('scale', s + ' ' + s + ' ' + s);
+    const pole = document.createElement('a-cylinder');
+    pole.setAttribute('radius', '0.04');
+    pole.setAttribute('height', '1.1');
+    pole.setAttribute('position', '0 0.55 0');
+    pole.setAttribute('material', 'color: #5c4033; roughness: 0.9');
+    inner.appendChild(pole);
+    const board = document.createElement('a-plane');
+    board.setAttribute('width', '1.4');
+    board.setAttribute('height', '0.42');
+    board.setAttribute('position', '0 1.22 0.02');
+    board.setAttribute('material', 'color: #f4e8dc; opacity: 0.95; side: double');
+    inner.appendChild(board);
+    const txt = document.createElement('a-text');
+    txt.setAttribute('value', (text || 'signpost').slice(0, 80));
+    txt.setAttribute('align', 'center');
+    txt.setAttribute('position', '0 1.22 0.06');
+    txt.setAttribute('color', '#2a1a22');
+    txt.setAttribute('width', '1.25');
+    inner.appendChild(txt);
+    root.appendChild(inner);
+
+    [pole, board, txt].forEach(el => setupObjectClick(el, obj));
+    return root;
+}
+
+function placeObjectInScene(scene, obj) {
+    if (placedIds.has(obj.id)) return;
+    if (typeof obj.latitude !== 'number' || typeof obj.longitude !== 'number') return;
+    const local = latLonToLocal(obj.latitude, obj.longitude);
+    if (!local) return;
+    // skip distant objects to keep the scene light
+    const dist = Math.hypot(local.x, local.z);
+    if (dist > 200) return;
+    const entity = (obj.type === 'signpost') ? buildSignpostEntity(obj, local.x, local.z) : buildCubeEntity(obj, local.x, local.z);
+    scene.appendChild(entity);
+    placedIds.add(obj.id);
+}
+
+function loadObjects() {
+    const scene = document.querySelector('a-scene');
+    if (!scene) return;
+    return fetch(API_URL, {credentials: 'same-origin'})
+        .then(function (r) {
+            return r.ok ? r.json() : [];
+        })
+        .then(function (list) {
+            if (!Array.isArray(list)) list = (list && list.objects) || [];
+            list = filterObjectsByLayer(list);
+            applyObjectsList(scene, list);
+            const sel = document.getElementById('layer-picker');
+            const layerNote = (sel && sel.value) ? ' (layer filter)' : '';
+            setStatus('status-objects', '<strong>Props</strong>: ' + placedIds.size + ' nearby' + layerNote);
+            return list;
+        })
+        .catch(function () {
+            setStatus('status-objects', '<strong>Props</strong>: load failed');
+        });
+}
+
+// Background poll so other users' placements + deletions show up without a
+// page refresh. Skips ticks when the tab is hidden, the boot is incomplete,
+// or the inspector is open (so a remote delete doesn't yank a panel out from
+// under the user mid-read).
+const POLL_INTERVAL_MS = 15000;
+let pollTimer = null;
+
+function startObjectPolling() {
+    if (pollTimer != null) clearInterval(pollTimer);
+    pollTimer = setInterval(function () {
+        if (originLat == null) return;
+        if (document.visibilityState && document.visibilityState !== 'visible') return;
+        if (selectedObjectId != null) return;
+        loadObjects();
+    }, POLL_INTERVAL_MS);
+}
+
+// Ray from screen-center through the camera frustum, intersected with the
+// ground plane (y=0). Returns world-space (x, z) the user is aiming at.
+// Falls back to a point 2m in front when looking above the horizon.
+function computeCursorTarget(scene) {
     const THREE = window.THREE;
-    const cam = scene.camera;
-    const camEl = document.querySelector('a-camera');
+    const cam = scene && scene.camera;
+    const camEl = document.getElementById('xr-camera');
     if (!cam || !camEl || !THREE) return null;
 
     const raycaster = new THREE.Raycaster();
     raycaster.setFromCamera(new THREE.Vector2(0, 0), cam);
-
     const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
     const hitPoint = new THREE.Vector3();
-    const planeHit = raycaster.ray.intersectPlane(groundPlane, hitPoint);
-
-    let wx, wy, wz;
-    let usedPlane = planeHit !== null;
-    if (usedPlane) {
-        wx = hitPoint.x;
-        wy = hitPoint.y;
-        wz = hitPoint.z;
-    } else {
-        const origin = new THREE.Vector3();
-        const dir = new THREE.Vector3();
-        camEl.object3D.getWorldPosition(origin);
-        camEl.object3D.getWorldDirection(dir);
-        const dist = 2;
-        wx = origin.x + dir.x * dist;
-        wy = origin.y + dir.y * dist;
-        wz = origin.z + dir.z * dist;
+    if (raycaster.ray.intersectPlane(groundPlane, hitPoint)) {
+        return {x: hitPoint.x, z: hitPoint.z, hitGround: true};
     }
-    return {x: wx, y: wy, z: wz, usedPlane: usedPlane};
+    const origin = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    camEl.object3D.getWorldPosition(origin);
+    camEl.object3D.getWorldDirection(dir);
+    const FALLBACK_DIST = 2;
+    return {
+        x: origin.x + dir.x * FALLBACK_DIST,
+        z: origin.z + dir.z * FALLBACK_DIST,
+        hitGround: false
+    };
 }
 
-var placementReticleRaf = null;
+// Visual indicator for where placeAtCursor will drop the next object.
+// Green when aimed at the ground, amber-ish when looking up (fallback dist).
+let placementReticleRaf = null;
 
 function ensurePlacementReticle(scene) {
-    var el = document.getElementById('placement-reticle');
+    let el = document.getElementById('placement-reticle');
     if (el) return el;
     el = document.createElement('a-entity');
     el.setAttribute('id', 'placement-reticle');
-    var ring = document.createElement('a-ring');
+    const ring = document.createElement('a-ring');
     ring.setAttribute('radius-inner', '0.11');
     ring.setAttribute('radius-outer', '0.17');
     ring.setAttribute('rotation', '-90 0 0');
@@ -383,788 +601,153 @@ function ensurePlacementReticle(scene) {
     return el;
 }
 
-// ring chases that hit point every frame
 function startPlacementReticleLoop(scene) {
     function tick() {
-        var t = computeWorldPlacementTarget(scene);
-        var reticle = document.getElementById('placement-reticle');
-        if (placeSpace === 'world' && t && reticle) {
+        const t = computeCursorTarget(scene);
+        const reticle = document.getElementById('placement-reticle');
+        if (t && reticle) {
             reticle.setAttribute('visible', true);
-            reticle.setAttribute('position', t.x + ' ' + t.y + ' ' + t.z);
-        } else if (reticle) {
-            reticle.setAttribute('visible', false);
+            reticle.setAttribute('position', t.x + ' 0 ' + t.z);
+            const ring = reticle.firstChild;
+            if (ring) {
+                ring.setAttribute('material',
+                    'color: ' + (t.hitGround ? '#2ecc71' : '#f5a623') +
+                    '; opacity: 0.72; shader: flat; side: double');
+            }
         }
         placementReticleRaf = window.requestAnimationFrame(tick);
     }
-
-    function begin() {
-        ensurePlacementReticle(scene);
-        if (placementReticleRaf) {
-            window.cancelAnimationFrame(placementReticleRaf);
-        }
-        placementReticleRaf = window.requestAnimationFrame(tick);
-    }
-
-    if (scene.hasLoaded) {
-        begin();
-    } else {
-        scene.addEventListener('loaded', begin, {once: true});
-    }
+    if (placementReticleRaf) window.cancelAnimationFrame(placementReticleRaf);
+    ensurePlacementReticle(scene);
+    placementReticleRaf = window.requestAnimationFrame(tick);
 }
 
-// scratch green cube to sanity-check placement
-function placeWorldSpaceTestCube() {
-    const scene = document.querySelector('a-scene');
-    if (!scene) {
-        console.warn('[ARP] placeWorldSpaceTestCube: no a-scene');
+function placeAtCursor() {
+    if (originLat == null) {
+        showToast('GPS origin not locked yet', true);
         return;
     }
-    const run = function () {
-        const THREE = window.THREE;
-        const t = computeWorldPlacementTarget(scene);
-        if (!t || !THREE) {
-            console.warn('[ARP] could not compute placement target');
-            return;
-        }
-        var wx = t.x, wy = t.y, wz = t.z;
-
-        var prev = document.getElementById('world-test-cube');
-        if (prev) prev.remove();
-
-        var root = document.createElement('a-entity');
-        root.setAttribute('id', 'world-test-cube');
-        root.setAttribute('position', wx + ' ' + wy + ' ' + wz);
-
-        var box = document.createElement('a-box');
-        box.setAttribute('width', '0.45');
-        box.setAttribute('height', '0.45');
-        box.setAttribute('depth', '0.45');
-        box.setAttribute('position', '0 0.225 0');
-        box.setAttribute('material', 'color: #2ecc71; opacity: 0.95; roughness: 0.5');
-
-        root.appendChild(box);
-        scene.appendChild(root);
-
-        var p = root.parentEl;
-        console.log('[ARP] test cube hit floor?', t.usedPlane, 'xyz', wx.toFixed(3), wy.toFixed(3), wz.toFixed(3));
-        console.log('[ARP] parent tag:', p && p.tagName, 'is scene root:', p === scene);
-        scene.object3D.updateMatrixWorld(true);
-        var wpos = new THREE.Vector3();
-        root.object3D.getWorldPosition(wpos);
-        console.log('[ARP] placed entity world position:', wpos.x.toFixed(3), wpos.y.toFixed(3), wpos.z.toFixed(3));
-    };
-
-    if (scene.hasLoaded) {
-        run();
-    } else {
-        scene.addEventListener('loaded', run, {once: true});
-    }
-}
-
-// ring position -> try api (gps + ar xyz), else localStorage fallback
-function placeWorldSpacePermanentCube() {
     const scene = document.querySelector('a-scene');
-    if (!scene) return;
-    const run = function () {
-        const THREE = window.THREE;
-        const t = computeWorldPlacementTarget(scene);
-        if (!t || !THREE) {
-            showMessage('could not place — wait for scene', true);
-            return;
-        }
-        var wx = t.x, wy = t.y, wz = t.z;
-        resolveLatLngThen(function (lat, lng) {
-            function offlineDrop() {
-                var id = 'world-placed-' + Date.now();
-                var hash = selectedPropHash();
-                spawnWorldCubeEntity(scene, id, wx, wy, wz, hash);
-                appendWorldPlacementSession({kind: 'cube', id: id, x: wx, y: wy, z: wz, fileHash: hash, savedAt: Date.now()});
-                showMessage('no gps / server — saved local only', true);
-            }
-
-            if (lat == null || lng == null) {
-                offlineDrop();
-                return;
-            }
-            submitWorldPlaceWithAr(lat, lng, wx, wy, wz, false)
-                .then(function (response) {
-                    if (response.ok) {
-                        return response.json().then(function () {
-                            showMessage('cube saved');
-                            return loadObjects();
-                        });
-                    }
-                    return readApiError(response).then(function (msg) {
-                        showMessage('save failed: ' + msg, true);
-                        offlineDrop();
-                    });
-                })
-                .catch(function () {
-                    showMessage('network bust — local copy kept', true);
-                    offlineDrop();
-                });
-        });
-    };
-    if (scene.hasLoaded) {
-        run();
-    } else {
-        scene.addEventListener('loaded', run, {once: true});
-    }
-}
-
-// plain text, no look-at (that messes with staying put)
-function fillSignpostInner(inner, contentSlice) {
-    var pole = document.createElement('a-cylinder');
-    pole.setAttribute('radius', '0.04');
-    pole.setAttribute('height', '1.1');
-    pole.setAttribute('position', '0 0.55 0');
-    pole.setAttribute('material', 'color: #5c4033; roughness: 0.9');
-    inner.appendChild(pole);
-    var board = document.createElement('a-plane');
-    board.setAttribute('width', '1.4');
-    board.setAttribute('height', '0.42');
-    board.setAttribute('position', '0 1.22 0.02');
-    board.setAttribute('material', 'color: #f4e8dc; opacity: 0.95; side: double');
-    inner.appendChild(board);
-    var text = document.createElement('a-text');
-    text.setAttribute('value', contentSlice);
-    text.setAttribute('align', 'center');
-    text.setAttribute('position', '0 1.22 0.06');
-    text.setAttribute('color', '#2a1a22');
-    text.setAttribute('width', '1.25');
-    inner.appendChild(text);
-}
-
-// same as cube but signpost type + text field
-function placeWorldSpacePermanentSignpost() {
-    const scene = document.querySelector('a-scene');
-    if (!scene) return;
-    const run = function () {
-        const THREE = window.THREE;
-        const t = computeWorldPlacementTarget(scene);
-        if (!t || !THREE) {
-            showMessage('could not place — wait for scene', true);
-            return;
-        }
-        var wx = t.x, wy = t.y, wz = t.z;
-        var raw = document.getElementById('signpost-text').value.trim();
-        var msg = (raw.length > 0 ? raw : 'signpost').slice(0, 80);
-        resolveLatLngThen(function (lat, lng) {
-            function offlineDrop() {
-                var id = 'world-signpost-' + Date.now();
-                spawnWorldSignpostEntity(scene, id, wx, wy, wz, msg);
-                appendWorldPlacementSession({
-                    kind: 'signpost', id: id, x: wx, y: wy, z: wz, content: msg, savedAt: Date.now()
-                });
-                showMessage('no gps / server — saved local only', true);
-            }
-
-            if (lat == null || lng == null) {
-                offlineDrop();
-                return;
-            }
-            submitWorldPlaceWithAr(lat, lng, wx, wy, wz, true)
-                .then(function (response) {
-                    if (response.ok) {
-                        return response.json().then(function () {
-                            showMessage('signpost saved');
-                            return loadObjects();
-                        });
-                    }
-                    return readApiError(response).then(function (errMsg) {
-                        showMessage('save failed: ' + errMsg, true);
-                        offlineDrop();
-                    });
-                })
-                .catch(function () {
-                    showMessage('network bust — local copy kept', true);
-                    offlineDrop();
-                });
-        });
-    };
-    if (scene.hasLoaded) {
-        run();
-    } else {
-        scene.addEventListener('loaded', run, {once: true});
-    }
-}
-
-function onPlaceButton() {
-    if (placeSpace === 'world') {
-        if (placeMode === 'signpost') {
-            placeWorldSpacePermanentSignpost();
-            return;
-        }
-        placeWorldSpacePermanentCube();
+    const target = computeCursorTarget(scene);
+    if (!target) {
+        showToast('scene not ready', true);
         return;
     }
-    placeAtGps();
-}
-
-// turn geo error codes into something readable
-function geoFailMessage(err) {
-    if (!err || err.code === undefined) return 'gps error — try again outside or allow location';
-    if (err.code === 1) return 'location blocked — tap allow, or settings > safari > location > while using';
-    if (err.code === 2) return 'position unavailable — move outdoors or wait for gps';
-    if (err.code === 3) return 'gps timed out — try again in open sky';
-    return 'gps error';
-}
-
-function dismissLocPrompt() {
-    var el = document.getElementById('loc-prompt');
-    if (el) el.classList.add('hidden');
-}
-
-function maybeHideLocPrompt() {
-    if (currentPosition && typeof currentPosition.latitude === 'number') {
-        dismissLocPrompt();
-    }
-}
-
-// ios wants a real button press before the location popup
-function requestLocationPermission() {
-    var box = document.getElementById('loc-prompt');
-    if (box) box.classList.remove('denied');
-    // ios safari ≥13: orientation events are gated behind a user-gesture permission
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        DeviceOrientationEvent.requestPermission().catch(function () {
-        });
-    }
-    if (!navigator.geolocation) {
-        var t0 = document.getElementById('loc-prompt-text');
-        if (t0) t0.innerText = 'this browser does not support geolocation.';
+    const ll = localToLatLon(target.x, target.z);
+    if (!ll) {
+        showToast('cannot project to lat/lon', true);
         return;
     }
-    navigator.geolocation.getCurrentPosition(function (pos) {
-        currentPosition = {
-            latitude: pos.coords.latitude, longitude: pos.coords.longitude
-        };
-        var st = document.getElementById('status-location');
-        if (st) {
-            st.innerHTML = '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5);
-        }
-        dismissLocPrompt();
-    }, function (err) {
-        var box = document.getElementById('loc-prompt');
-        var t = document.getElementById('loc-prompt-text');
-        if (!t || !box) return;
-        if (err.code === 1) {
-            box.classList.add('denied');
-            t.innerText = 'location was blocked. on iphone: settings → privacy → location services → safari → while using. then reload this page.';
-        } else {
-            t.innerText = geoFailMessage(err);
-        }
-    }, {enableHighAccuracy: true, timeout: 25000, maximumAge: 10000});
-}
 
-function submitPlace(lat, lng) {
-    const formData = new URLSearchParams();
-    formData.append('latitude', String(lat));
-    formData.append('longitude', String(lng));
+    const fd = new URLSearchParams();
+    fd.append('latitude', String(ll.lat));
+    fd.append('longitude', String(ll.lon));
     if (placeMode === 'signpost') {
-        formData.append('type', 'signpost');
+        fd.append('type', 'signpost');
         const txt = document.getElementById('signpost-text').value.trim();
-        if (txt.length > 0) formData.append('content', txt);
+        if (txt.length > 0) fd.append('content', txt);
     } else {
-        formData.append('type', 'prop');
-        formData.append('fileHash', selectedPropHash());
+        fd.append('type', 'prop');
+        fd.append('fileHash', selectedPropHash());
     }
-    appendLayerIfAny(formData);
-
+    const lp = document.getElementById('layer-picker');
+    if (lp && lp.value) fd.append('layerId', lp.value);
     fetch(API_URL, {
         method: 'POST',
         credentials: 'same-origin',
         headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: formData
+        body: fd
     })
-        .then(function (response) {
-            if (response.ok) {
-                return response.json().then(function () {
-                    showMessage(placeMode === 'signpost' ? 'signpost placed' : 'cube placed');
-                    return loadObjects();
-                });
+        .then(function (r) {
+            if (!r.ok) {
+                showToast('place failed (' + r.status + ')', true);
+                return;
             }
-            return readApiError(response).then(function (msg) {
-                showMessage('place failed: ' + msg, true);
-            });
+            showToast(placeMode === 'signpost' ? 'signpost placed' : 'cube placed');
+            return loadObjects();
         })
         .catch(function () {
-            showMessage('network error on place', true);
+            showToast('network error', true);
         });
 }
 
-// gps tag + a-frame xyz for world drops (api already stores ar_x etc)
-function submitWorldPlaceWithAr(lat, lng, wx, wy, wz, isSignpost) {
-    const formData = new URLSearchParams();
-    formData.append('latitude', String(lat));
-    formData.append('longitude', String(lng));
-    formData.append('arX', String(wx));
-    formData.append('arY', String(wy));
-    formData.append('arZ', String(wz));
-    if (isSignpost) {
-        formData.append('type', 'signpost');
-        const txt = document.getElementById('signpost-text').value.trim();
-        if (txt.length > 0) formData.append('content', txt);
-    } else {
-        formData.append('type', 'prop');
-        formData.append('fileHash', selectedPropHash());
-    }
-    appendLayerIfAny(formData);
-    return fetch(API_URL, {
-        method: 'POST',
-        credentials: 'same-origin',
-        headers: {'Content-Type': 'application/x-www-form-urlencoded'},
-        body: formData
-    });
-}
+// ---- boot ----
 
-// placement-time gps: never trust a cached fix, never accept a coarse one
-const PLACEMENT_ACCURACY_GATE_M = 20;   // reject fixes worse than this
-const PLACEMENT_SAMPLE_WINDOW_MS = 4000; // watchPosition burst length
-const PLACEMENT_EARLY_EXIT_M = 8;        // settle immediately on a fix this good
-const PLACEMENT_HARD_TIMEOUT_MS = 25000;
-
-// runs a short watchPosition burst and picks the most-accurate sample.
-// ok(lat, lng, accM) on a fix within the gate; fail(reason, bestSeenAccM) otherwise.
-function acquireBestFix(ok, fail) {
-    if (!navigator.geolocation) {
-        fail('no-geo', null);
-        return;
-    }
-    let best = null;
-    let watchId = null;
-    let settled = false;
-    let windowTimer = null;
-
-    function clearWatch() {
-        if (watchId != null) {
-            try {
-                navigator.geolocation.clearWatch(watchId);
-            } catch (e) {
+// Run permission requests in series so the user only sees one prompt at a
+// time (browsers queue them, but the UX is clearer this way) and so a denial
+// at any step gives a precise error message.
+function bootAR() {
+    setStatus('status-tracking', '<strong>Tracking</strong>: requesting motion…');
+    return requestOrientationPermission()
+        .then(function (granted) {
+            if (!granted) {
+                // Not fatal on Android (granted=true via the no-API path) — only
+                // hits here if iOS user tapped Deny. Scene still renders, but
+                // camera rotation won't follow the device.
+                showToast('Motion access denied — rotation tracking off', true);
             }
-            watchId = null;
-        }
-        if (windowTimer != null) {
-            clearTimeout(windowTimer);
-            windowTimer = null;
-        }
-    }
-
-    function settle() {
-        if (settled) return;
-        settled = true;
-        clearWatch();
-        if (!best) {
-            fail('no-fix', null);
-            return;
-        }
-        if (best.acc > PLACEMENT_ACCURACY_GATE_M) {
-            fail('weak', best.acc);
-            return;
-        }
-        currentPosition = {latitude: best.lat, longitude: best.lng};
-        var st = document.getElementById('status-location');
-        if (st) {
-            st.innerHTML = '<strong>GPS</strong>: ' + best.lat.toFixed(5) + ', ' + best.lng.toFixed(5) + ' (±' + Math.round(best.acc) + 'm)';
-        }
-        ok(best.lat, best.lng, best.acc);
-    }
-
-    try {
-        watchId = navigator.geolocation.watchPosition(function (pos) {
-            var acc = pos.coords.accuracy;
-            if (best === null || acc < best.acc) {
-                best = {lat: pos.coords.latitude, lng: pos.coords.longitude, acc: acc};
-            }
-            if (acc <= PLACEMENT_EARLY_EXIT_M) settle();
-        }, function (err) {
-            // surface only if we never got a single sample
-            if (!best && (err.code === 1 || err.code === 2)) {
-                if (settled) return;
-                settled = true;
-                clearWatch();
-                fail(err.code === 1 ? 'denied' : 'unavailable', null);
-            }
-        }, {enableHighAccuracy: true, timeout: PLACEMENT_HARD_TIMEOUT_MS, maximumAge: 0});
-    } catch (e) {
-        fail('exception', null);
-        return;
-    }
-
-    windowTimer = setTimeout(settle, PLACEMENT_SAMPLE_WINDOW_MS);
-}
-
-function gpsFailToast(reason, bestAcc) {
-    if (reason === 'weak' && bestAcc != null) {
-        showMessage('gps too weak (±' + Math.round(bestAcc) + 'm). step outside or wait, then retry', true);
-    } else if (reason === 'denied') {
-        showMessage('location was blocked. enable it in settings, then reload', true);
-    } else if (reason === 'no-geo') {
-        showMessage('this browser has no geolocation', true);
-    } else if (reason === 'no-fix') {
-        showMessage('no gps fix yet. step outside or wait, then retry', true);
-    } else {
-        showMessage('gps unavailable. try again outdoors', true);
-    }
-}
-
-function resolveLatLngThen(callback) {
-    acquireBestFix(function (lat, lng) {
-        callback(lat, lng);
-    }, function (reason, bestAcc) {
-        gpsFailToast(reason, bestAcc);
-        callback(null, null);
-    });
-}
-
-// same tap as + helps gps on iphone
-function placeAtGps() {
-    showMessage('locking gps…');
-    acquireBestFix(function (lat, lng) {
-        submitPlace(lat, lng);
-    }, function (reason, bestAcc) {
-        gpsFailToast(reason, bestAcc);
-    });
-}
-
-// shared cube/asset body — glTF if "asset:N", else preset shapes, else legacy labeled cube.
-// returns the array of clickable elements added.
-function appendPropBody(parent, obj) {
-    var assetId = parseAssetId(obj.fileHash);
-    var clickables = [];
-    if (assetId) {
-        var model = document.createElement('a-entity');
-        model.setAttribute('gltf-model', 'url(' + ASSETS_URL + '/' + assetId + ')');
-        model.setAttribute('position', '0 0 0');
-        parent.appendChild(model);
-        clickables.push(model);
-        return clickables;
-    }
-    var preset = parsePresetKind(obj.fileHash);
-    if (preset === 'bread') {
-        var loaf = document.createElement('a-box');
-        loaf.setAttribute('width', '0.5');
-        loaf.setAttribute('height', '0.28');
-        loaf.setAttribute('depth', '0.72');
-        loaf.setAttribute('position', '0 0.14 0');
-        loaf.setAttribute('material', 'color: #c9a227; opacity: 0.95; roughness: 0.78; metalness: 0.06');
-        parent.appendChild(loaf);
-        clickables.push(loaf);
-        var dome = document.createElement('a-sphere');
-        dome.setAttribute('radius', '0.16');
-        dome.setAttribute('position', '0 0.38 0.12');
-        dome.setAttribute('scale', '1 0.55 1');
-        dome.setAttribute('material', 'color: #e8d4a8; roughness: 0.82');
-        parent.appendChild(dome);
-        clickables.push(dome);
-        return clickables;
-    }
-    if (preset === 'stars') {
-        var grp = document.createElement('a-entity');
-        grp.setAttribute('position', '0 0.35 0');
-        var colors = ['#ffe082', '#fff9c4', '#ffecb3'];
-        for (var i = 0; i < 5; i++) {
-            var spike = document.createElement('a-tetrahedron');
-            var ang = (i / 5) * Math.PI * 2;
-            var r = 0.22;
-            spike.setAttribute('radius', '0.12');
-            spike.setAttribute('position', (Math.cos(ang) * r) + ' 0 ' + (Math.sin(ang) * r));
-            spike.setAttribute('rotation', (i * 31) + ' ' + (i * 17) + ' 0');
-            spike.setAttribute('material', 'color: ' + colors[i % colors.length] +
-                '; emissive: #b8860b; emissiveIntensity: 0.45; metalness: 0.22; roughness: 0.38');
-            grp.appendChild(spike);
-            clickables.push(spike);
-        }
-        var core = document.createElement('a-octahedron');
-        core.setAttribute('radius', '0.1');
-        core.setAttribute('material', 'color: #fffde7; emissive: #ffc107; emissiveIntensity: 0.55; metalness: 0.28; roughness: 0.22');
-        grp.appendChild(core);
-        clickables.push(core);
-        parent.appendChild(grp);
-        return clickables;
-    }
-    if (preset === 'cube') {
-        var boxC = document.createElement('a-box');
-        boxC.setAttribute('width', '0.5');
-        boxC.setAttribute('height', '0.5');
-        boxC.setAttribute('depth', '0.5');
-        boxC.setAttribute('position', '0 0 0');
-        boxC.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
-        parent.appendChild(boxC);
-        clickables.push(boxC);
-        return clickables;
-    }
-    var box = document.createElement('a-box');
-    box.setAttribute('width', '0.5');
-    box.setAttribute('height', '0.5');
-    box.setAttribute('depth', '0.5');
-    box.setAttribute('position', '0 0 0');
-    box.setAttribute('material', 'color: #d37f8f; opacity: 0.92; roughness: 0.6');
-    parent.appendChild(box);
-    clickables.push(box);
-    var tag = document.createElement('a-text');
-    tag.setAttribute('value', (obj.fileHash || 'cube').slice(0, 20));
-    tag.setAttribute('align', 'center');
-    tag.setAttribute('position', '0 0.45 0');
-    tag.setAttribute('scale', '0.7 0.7 0.7');
-    tag.setAttribute('color', '#ffffff');
-    parent.appendChild(tag);
-    clickables.push(tag);
-    return clickables;
-}
-
-function attachCubeGps(scene, obj) {
-    var anchor = document.createElement('a-entity');
-    anchor.setAttribute('id', 'obj-' + obj.id);
-    anchor.setAttribute('gps-entity-place', 'latitude: ' + obj.latitude + '; longitude: ' + obj.longitude);
-    anchor.setAttribute('scale', '1 1 1');
-    var inner = document.createElement('a-entity');
-    if (obj.arYawDeg != null && !isNaN(obj.arYawDeg)) {
-        inner.setAttribute('rotation', '0 ' + (-obj.arYawDeg) + ' 0');
-    }
-    inner.setAttribute('position', '0 0.25 0');
-    var s = obj.scale || 1;
-    inner.setAttribute('scale', s + ' ' + s + ' ' + s);
-    appendPropBody(inner, obj).forEach(function (el) { setupObjectClick(el, obj); });
-    anchor.appendChild(inner);
-    scene.appendChild(anchor);
-    return true;
-}
-
-function attachSignpostGps(scene, obj) {
-    var anchor = document.createElement('a-entity');
-    anchor.setAttribute('id', 'obj-' + obj.id);
-    anchor.setAttribute('gps-entity-place', 'latitude: ' + obj.latitude + '; longitude: ' + obj.longitude);
-    anchor.setAttribute('scale', '1 1 1');
-    var inner = document.createElement('a-entity');
-    if (obj.arYawDeg != null && !isNaN(obj.arYawDeg)) {
-        inner.setAttribute('rotation', '0 ' + (-obj.arYawDeg) + ' 0');
-    }
-    inner.setAttribute('position', '0 0 0');
-    var s = obj.scale || 1;
-    inner.setAttribute('scale', s + ' ' + s + ' ' + s);
-    var msg = (obj.content || 'signpost').slice(0, 80);
-    fillSignpostInner(inner, msg);
-    anchor.appendChild(inner);
-    scene.appendChild(anchor);
-
-    inner.querySelectorAll('a-cylinder, a-plane, a-text').forEach(function (el) {
-        setupObjectClick(el, obj);
-    });
-    return true;
-}
-
-function objectHasWorldAnchor(obj) {
-    return obj && typeof obj.arX === 'number' && typeof obj.arY === 'number' && typeof obj.arZ === 'number' && !isNaN(obj.arX) && !isNaN(obj.arY) && !isNaN(obj.arZ);
-}
-
-function attachCubeWorld(scene, obj) {
-    var root = document.createElement('a-entity');
-    root.setAttribute('id', 'obj-' + obj.id);
-    root.setAttribute('position', obj.arX + ' ' + obj.arY + ' ' + obj.arZ);
-    var inner = document.createElement('a-entity');
-    if (obj.arYawDeg != null && !isNaN(obj.arYawDeg)) {
-        inner.setAttribute('rotation', '0 ' + (-obj.arYawDeg) + ' 0');
-    }
-    inner.setAttribute('position', '0 0.25 0');
-    var s = obj.scale || 1;
-    inner.setAttribute('scale', s + ' ' + s + ' ' + s);
-    appendPropBody(inner, obj).forEach(function (el) { setupObjectClick(el, obj); });
-    root.appendChild(inner);
-    scene.appendChild(root);
-    return true;
-}
-
-function attachSignpostWorld(scene, obj) {
-    var root = document.createElement('a-entity');
-    root.setAttribute('id', 'obj-' + obj.id);
-    root.setAttribute('position', obj.arX + ' ' + obj.arY + ' ' + obj.arZ);
-    var inner = document.createElement('a-entity');
-    if (obj.arYawDeg != null && !isNaN(obj.arYawDeg)) {
-        inner.setAttribute('rotation', '0 ' + (-obj.arYawDeg) + ' 0');
-    }
-    inner.setAttribute('position', '0 0 0');
-    var s = obj.scale || 1;
-    inner.setAttribute('scale', s + ' ' + s + ' ' + s);
-    var msg = (obj.content || 'signpost').slice(0, 80);
-    fillSignpostInner(inner, msg);
-    root.appendChild(inner);
-    scene.appendChild(root);
-
-    inner.querySelectorAll('a-cylinder, a-plane, a-text').forEach(function (el) {
-        setupObjectClick(el, obj);
-    });
-    return true;
-}
-
-function placeObjectsInScene(scene, list) {
-    if (!scene) return;
-
-    function run() {
-        list.forEach(function (obj) {
-            if (document.getElementById('obj-' + obj.id)) return;
-            if (objectHasWorldAnchor(obj)) {
-                if (obj.type === 'signpost') {
-                    attachSignpostWorld(scene, obj);
-                } else {
-                    attachCubeWorld(scene, obj);
-                }
-            } else if (obj.type === 'signpost') {
-                attachSignpostGps(scene, obj);
+            setStatus('status-tracking', '<strong>Tracking</strong>: requesting camera…');
+            return startCamera();
+        })
+        .then(function () {
+            setStatus('status-tracking', '<strong>Tracking</strong>: device orientation');
+            setStatus('status-location', '<strong>GPS origin</strong>: locking…');
+            return lockOriginGps();
+        })
+        .then(function (best) {
+            originLat = best.lat;
+            originLon = best.lon;
+            originAcc = best.acc;
+            setStatus('status-location',
+                '<strong>GPS origin</strong>: ' + best.lat.toFixed(5) + ', ' + best.lon.toFixed(5) +
+                ' (±' + Math.round(best.acc) + 'm)');
+            const scene = document.querySelector('a-scene');
+            const onReady = function () {
+                hideLoading();
+                startPlacementReticleLoop(scene);
+                loadObjects();
+                startObjectPolling();
+            };
+            if (scene && scene.hasLoaded) onReady();
+            else if (scene) scene.addEventListener('loaded', onReady, {once: true});
+        })
+        .catch(function (err) {
+            const msg = (err && err.message) || String(err);
+            if (msg === 'no-geo') {
+                showFatal('Geolocation not supported in this browser.');
+            } else if (msg === 'denied') {
+                showFatal('Location access was denied. Enable it in browser settings and tap Retry.');
+            } else if (msg === 'unavailable' || msg === 'no-fix') {
+                showFatal('No GPS fix. Step outdoors and tap Retry.');
+            } else if (msg.indexOf('weak:') === 0) {
+                showFatal('GPS too weak (±' + msg.slice(5) + 'm). Move to open sky and tap Retry.');
+            } else if (msg.indexOf('getUserMedia') === 0) {
+                showFatal('Camera API unavailable. Try a different browser.');
+            } else if (err && err.name === 'NotAllowedError') {
+                showFatal('Camera access was denied. Enable it in browser settings and tap Retry.');
+            } else if (err && err.name === 'NotFoundError') {
+                showFatal('No camera found on this device.');
             } else {
-                attachCubeGps(scene, obj);
+                showFatal('Startup failed: ' + msg);
             }
         });
-    }
-
-    if (scene.hasLoaded) {
-        run();
-    } else {
-        scene.addEventListener('loaded', run, {once: true});
-    }
 }
 
-window.onload = () => {
-    const loadingSub = document.getElementById('loading-sub');
-
-    if (!navigator.geolocation) {
-        showError("Geolocation is not supported by your browser.");
-        return;
-    }
-
-    loadingSub.innerText = "Starting camera...";
-
-    // surface "denied" state in the prompt; AR.js owns the actual GPS subscription
-    if (navigator.permissions && navigator.permissions.query) {
-        navigator.permissions.query({name: 'geolocation'}).then(function (r) {
-            if (r.state === 'denied') {
-                var box = document.getElementById('loc-prompt');
-                var t = document.getElementById('loc-prompt-text');
-                if (box && t) {
-                    box.classList.add('denied');
-                    t.innerText = 'location is denied for this site. change it in browser settings, then reload.';
-                }
-            }
-        }).catch(function () {
-        });
-    }
-
-    document.addEventListener('arjs-video-loaded', () => {
-        hideLoading();
-    });
-    const scene = document.querySelector('a-scene');
-    if (scene) {
-        function onSceneReady() {
-            hideLoading();
-            startPlacementReticleLoop(scene);
-        }
-
-        if (scene.hasLoaded) {
-            onSceneReady();
-        } else {
-            scene.addEventListener('loaded', onSceneReady);
-        }
-    }
-    setTimeout(() => {
-        if (document.getElementById('loading')) {
-            hideLoading();
-        }
-    }, 8000);
-
-    window.addEventListener('gps-camera-update-position', e => {
-        currentPosition = {
-            latitude: e.detail.position.latitude, longitude: e.detail.position.longitude
-        };
-        var acc = e.detail.position.accuracy;
-        lastGpsAccuracy = (typeof acc === 'number') ? acc : null;
-        console.log('[gps]', e.detail.position.latitude.toFixed(6), e.detail.position.longitude.toFixed(6), 'acc=', acc);
-        var accLabel = (lastGpsAccuracy != null) ? ' (±' + Math.round(lastGpsAccuracy) + 'm)' : '';
-        var quality = '';
-        if (lastGpsAccuracy != null) {
-            if (lastGpsAccuracy <= 10) quality = ' · good'; else if (lastGpsAccuracy <= 20) quality = ' · ok'; else quality = ' · weak';
-        }
-        document.getElementById('status-location').innerHTML = '<strong>GPS</strong>: ' + currentPosition.latitude.toFixed(5) + ', ' + currentPosition.longitude.toFixed(5) + accLabel + quality;
-        maybeHideLocPrompt();
-    });
-
-    window.addEventListener('orientationchange', () => {
-        setTimeout(() => window.dispatchEvent(new Event('resize')), 200);
-    });
-
-    syncPlaceHint();
+document.addEventListener('DOMContentLoaded', function () {
     loadAssetPicker();
     loadLayerPicker();
-    loadObjects();
-};
 
-function showError(msg) {
-    const loadingText = document.getElementById('loading-text');
-    const loadingSub = document.getElementById('loading-sub');
-    const retryBtn = document.getElementById('retry-btn');
-
-    if (loadingText) loadingText.innerText = "Initialization Failed";
-    if (loadingSub) {
-        loadingSub.innerText = msg;
-        loadingSub.style.color = "#ff6b6b";
+    const startBtn = document.getElementById('start-btn');
+    if (startBtn) {
+        startBtn.addEventListener('click', function () {
+            startBtn.disabled = true;
+            startBtn.textContent = 'Starting…';
+            bootAR().finally(function () {
+                // re-enable in case showFatal was called and the user wants to
+                // retry without a full reload (though Retry button does reload).
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start AR';
+            });
+        });
     }
-    if (retryBtn) retryBtn.style.display = "block";
-
-    document.getElementById('status-location').innerText = msg;
-}
-
-function hideLoading() {
-    const loading = document.getElementById('loading');
-    if (loading) {
-        loading.style.opacity = '0';
-        setTimeout(() => {
-            if (loading) loading.remove();
-        }, 500);
-    }
-}
-
-function showMessage(msg, isError = false) {
-    const statusObj = document.getElementById('status-objects');
-    if (!statusObj) return;
-    const originalText = statusObj.getAttribute('data-original') || statusObj.innerText;
-    if (!statusObj.hasAttribute('data-original')) {
-        statusObj.setAttribute('data-original', originalText);
-    }
-    statusObj.style.color = isError ? '#ff6b6b' : '#4ecd96';
-    statusObj.innerText = msg;
-
-    if (window.msgTimeout) clearTimeout(window.msgTimeout);
-    window.msgTimeout = setTimeout(() => {
-        statusObj.style.color = '#aaa';
-        statusObj.innerText = statusObj.getAttribute('data-original');
-        window.msgTimeout = null;
-    }, 3500);
-}
-
-async function loadObjects() {
-    const scene = document.querySelector('a-scene');
-    const statusObj = document.getElementById('status-objects');
-    if (!scene) return;
-    try {
-        const response = await fetch(API_URL, {credentials: 'same-origin'});
-        if (!response.ok) {
-            showMessage('could not load objects: ' + await readApiError(response), true);
-            restoreWorldPlacementsFromSession(scene);
-            return;
-        }
-        const objects = await response.json();
-        clearPlacedFromScene(scene);
-        const filtered = filterObjectsByLayer(objects);
-
-        statusObj.setAttribute('data-original', 'loaded ' + filtered.length + ' things');
-        if (!window.msgTimeout) {
-            statusObj.innerText = 'loaded ' + filtered.length + ' things';
-            statusObj.style.color = '#aaa';
-        }
-
-        placeObjectsInScene(scene, filtered);
-        restoreWorldPlacementsFromSession(scene);
-    } catch (err) {
-        if (statusObj) showMessage('load failed (network?)', true);
-        restoreWorldPlacementsFromSession(scene);
-    }
-}
+});
