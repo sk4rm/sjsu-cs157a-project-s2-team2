@@ -28,7 +28,7 @@ CREATE TABLE `virtual_props` (
   `object_id` int NOT NULL,
   `file_hash` varchar(255) NOT NULL,
   PRIMARY KEY (`object_id`),
-  CONSTRAINT `fk_virtual_objects_virtual_props` FOREIGN KEY (`object_id`) REFERENCES `virtual_objects` (`id`)
+  CONSTRAINT `fk_virtual_objects_virtual_props` FOREIGN KEY (`object_id`) REFERENCES `virtual_objects` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

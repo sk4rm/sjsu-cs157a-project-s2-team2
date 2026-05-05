@@ -30,7 +30,7 @@ CREATE TABLE `includes` (
   PRIMARY KEY (`layer_id`,`object_id`),
   KEY `fk_virtual_objects_includes_idx` (`object_id`),
   CONSTRAINT `fk_layers_includes` FOREIGN KEY (`layer_id`) REFERENCES `layers` (`layer_id`),
-  CONSTRAINT `fk_virtual_objects_includes` FOREIGN KEY (`object_id`) REFERENCES `virtual_objects` (`id`)
+  CONSTRAINT `fk_virtual_objects_includes` FOREIGN KEY (`object_id`) REFERENCES `virtual_objects` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 

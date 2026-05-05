@@ -34,7 +34,7 @@ CREATE TABLE `comments` (
   KEY `fk_user_accounts_comments_idx` (`commenter_id`),
   KEY `fk_virtual_objects_comments_idx` (`object_id`),
   CONSTRAINT `fk_user_accounts_comments` FOREIGN KEY (`commenter_id`) REFERENCES `user_accounts` (`id`),
-  CONSTRAINT `fk_virtual_objects_comments` FOREIGN KEY (`object_id`) REFERENCES `virtual_objects` (`id`)
+  CONSTRAINT `fk_virtual_objects_comments` FOREIGN KEY (`object_id`) REFERENCES `virtual_objects` (`id`) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_0900_ai_ci;
 /*!40101 SET character_set_client = @saved_cs_client */;
 
