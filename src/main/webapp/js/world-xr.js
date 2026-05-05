@@ -68,7 +68,7 @@ function loadLayerPicker() {
             if (saved && Array.prototype.some.call(sel.options, function (o) { return o.value === saved; })) {
                 sel.value = saved;
             }
-            if (document.querySelector('a-scene')) loadObjects();
+            if (originLat != null) loadObjects();
         })
         .catch(function () { /* All layers only */ });
     sel.addEventListener('change', function () {
@@ -136,15 +136,10 @@ function closeInspector() {
     }
 }
 
-// native confirm() pauses iOS Safari's camera MediaStreamTrack, which kills
-// 8th Wall's SLAM session — same root cause as the landscape rotation freeze.
-// inline two-step confirm avoids the modal entirely.
+// inline two-step confirm: native confirm() can pause the camera
+// MediaStreamTrack on iOS Safari, which causes a brief black-frame flicker.
 function resetDeleteConfirm() {
-    const del = document.getElementById('inspector-delete');
     const conf = document.getElementById('inspector-confirm');
-    if (del && del.style.display !== 'none') {
-        // leave alone — caller (openInspector) will reshow per ownership
-    }
     if (conf) conf.style.display = 'none';
 }
 
@@ -178,7 +173,7 @@ function onDeleteConfirmed() {
                 onDeleteCancelled();
             });
         }
-    }).catch(function (err) {
+    }).catch(function () {
         showToast('Network error on delete', true);
         onDeleteCancelled();
     });
@@ -198,8 +193,7 @@ let placeMode = 'cube';
 let originLat = null, originLon = null, originAcc = null;
 const M_PER_DEG_LAT = 111320; // close enough for short distances
 let placedIds = new Set();
-
-// (Existing helper functions remain until factories)
+let cameraStream = null;
 
 function setPlaceMode(mode) {
     placeMode = mode;
@@ -227,6 +221,18 @@ function hideLoading() {
     if (!el) return;
     el.style.opacity = '0';
     setTimeout(() => el.remove(), 500);
+}
+
+function showFatal(msg) {
+    const sub = document.getElementById('loading-sub');
+    const start = document.getElementById('start-btn');
+    const retry = document.getElementById('retry-btn');
+    if (sub) {
+        sub.innerText = msg;
+        sub.style.color = '#ff8b8b';
+    }
+    if (start) start.style.display = 'none';
+    if (retry) retry.style.display = 'inline-block';
 }
 
 // lat/lon → local meters (equirectangular, valid for sub-km distances)
@@ -264,10 +270,7 @@ function lockOriginGps() {
             if (settled) return;
             settled = true;
             if (watchId != null) {
-                try {
-                    navigator.geolocation.clearWatch(watchId);
-                } catch (e) {
-                }
+                try { navigator.geolocation.clearWatch(watchId); } catch (e) {}
             }
             if (!best) {
                 reject(new Error('no-fix'));
@@ -291,10 +294,7 @@ function lockOriginGps() {
                 if (!best && (err.code === 1 || err.code === 2)) {
                     settled = true;
                     if (watchId != null) {
-                        try {
-                            navigator.geolocation.clearWatch(watchId);
-                        } catch (e) {
-                        }
+                        try { navigator.geolocation.clearWatch(watchId); } catch (e) {}
                     }
                     reject(new Error(err.code === 1 ? 'denied' : 'unavailable'));
                 }
@@ -305,6 +305,46 @@ function lockOriginGps() {
         }
         setTimeout(settle, WINDOW);
     });
+}
+
+// iOS Safari ≥13 gates DeviceOrientationEvent behind a per-origin permission
+// that *must* be requested from inside a user-gesture handler. Android Chrome
+// has no such gate — it returns true immediately. Resolves true on grant or
+// when the API isn't gated; false if the user denied.
+function requestOrientationPermission() {
+    return new Promise(function (resolve) {
+        if (typeof DeviceOrientationEvent === 'undefined' ||
+            typeof DeviceOrientationEvent.requestPermission !== 'function') {
+            resolve(true);
+            return;
+        }
+        DeviceOrientationEvent.requestPermission()
+            .then(function (state) { resolve(state === 'granted'); })
+            .catch(function () { resolve(false); });
+    });
+}
+
+// rear-facing camera, sized to fill the viewport. We don't constrain
+// resolution — the browser picks a sensible default and the <video> element's
+// CSS object-fit: cover handles aspect.
+function startCamera() {
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+        return Promise.reject(new Error('getUserMedia not supported'));
+    }
+    const constraints = {
+        video: {facingMode: {ideal: 'environment'}},
+        audio: false
+    };
+    return navigator.mediaDevices.getUserMedia(constraints)
+        .then(function (stream) {
+            cameraStream = stream;
+            const video = document.getElementById('camera-feed');
+            video.srcObject = stream;
+            // playsinline + muted are already in the markup; play() returns a
+            // Promise that rejects on iOS if the call wasn't from a gesture,
+            // but we *are* in the Start handler so it works.
+            return video.play().catch(function () { /* autoplay race; harmless */ });
+        });
 }
 
 // ---- entity factories (mirror world.jsp's visual style, minus gps-entity-place) ----
@@ -488,7 +528,9 @@ function placeAtCamera() {
         showToast('camera not ready', true);
         return;
     }
-    // 8th Wall world-tracking puts the camera in local meters
+    // Without SLAM the camera object3D stays at its origin (0, 1.5, 0). That
+    // means "place at camera" effectively drops at the GPS origin, which is
+    // the right behavior here — the user is standing at the origin point.
     const p = camEl.object3D.position;
     const ll = localToLatLon(p.x, p.z);
     if (!ll) {
@@ -528,96 +570,81 @@ function placeAtCamera() {
         });
 }
 
-// ---- engine boot ----
+// ---- boot ----
 
-function reportFatal(msg) {
-    const sub = document.getElementById('loading-sub');
-    const retry = document.getElementById('retry-btn');
-    if (sub) {
-        sub.innerText = msg;
-        sub.style.color = '#ff8b8b';
-    }
-    if (retry) retry.style.display = 'block';
-}
-
-// Wait for XR8 (engine) to attach to window. If the binary isn't installed,
-// give up after a few seconds with a clear error pointing at the README.
-function whenXr8Ready(cb, deadlineMs) {
-    const start = Date.now();
-    (function tick() {
-        if (window.XR8) {
-            cb();
-            return;
-        }
-        if (Date.now() - start > (deadlineMs || 8000)) {
-            reportFatal('XR engine failed to load from CDN. Check network / cdn.jsdelivr.net.');
-            return;
-        }
-        setTimeout(tick, 100);
-    })();
-}
-
-// Boot order: lock GPS origin → wait for XR engine → wait for scene loaded → fetch props
-document.addEventListener('DOMContentLoaded', function () {
-    // iOS Safari ≥13: gyro permission gate — must run on a user gesture for the
-    // permission popup to appear, but harmless to try here as a no-op fallback.
-    if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
-        DeviceOrientationEvent.requestPermission().catch(function () {
-        });
-    }
-
-    loadAssetPicker();
-    loadLayerPicker();
-    setStatus('status-tracking', '<strong>Tracking</strong>: locking GPS origin…');
-    lockOriginGps()
+// Run permission requests in series so the user only sees one prompt at a
+// time (browsers queue them, but the UX is clearer this way) and so a denial
+// at any step gives a precise error message.
+function bootAR() {
+    setStatus('status-tracking', '<strong>Tracking</strong>: requesting motion…');
+    return requestOrientationPermission()
+        .then(function (granted) {
+            if (!granted) {
+                // Not fatal on Android (granted=true via the no-API path) — only
+                // hits here if iOS user tapped Deny. Scene still renders, but
+                // camera rotation won't follow the device.
+                showToast('Motion access denied — rotation tracking off', true);
+            }
+            setStatus('status-tracking', '<strong>Tracking</strong>: requesting camera…');
+            return startCamera();
+        })
+        .then(function () {
+            setStatus('status-tracking', '<strong>Tracking</strong>: device orientation');
+            setStatus('status-location', '<strong>GPS origin</strong>: locking…');
+            return lockOriginGps();
+        })
         .then(function (best) {
             originLat = best.lat;
             originLon = best.lon;
             originAcc = best.acc;
-            setStatus('status-location', '<strong>GPS origin</strong>: ' + best.lat.toFixed(5) + ', ' + best.lon.toFixed(5) + ' (±' + Math.round(best.acc) + 'm)');
+            setStatus('status-location',
+                '<strong>GPS origin</strong>: ' + best.lat.toFixed(5) + ', ' + best.lon.toFixed(5) +
+                ' (±' + Math.round(best.acc) + 'm)');
+            const scene = document.querySelector('a-scene');
+            const onReady = function () {
+                hideLoading();
+                loadObjects();
+            };
+            if (scene && scene.hasLoaded) onReady();
+            else if (scene) scene.addEventListener('loaded', onReady, {once: true});
         })
         .catch(function (err) {
-            const code = (err && err.message) || 'fail';
-            setStatus('status-location', '<strong>GPS origin</strong>: ' + code + ' — placement disabled');
-            showToast('GPS lock failed: ' + code, true);
-        })
-        .finally(function () {
-            whenXr8Ready(function () {
-                setStatus('status-tracking', '<strong>Tracking</strong>: 8th Wall SLAM');
-                const scene = document.querySelector('a-scene');
-
-                function onReady() {
-                    hideLoading();
-                    if (originLat != null) loadObjects();
-                }
-
-                if (scene && scene.hasLoaded) onReady(); else if (scene) scene.addEventListener('loaded', onReady, {once: true});
-            });
+            const msg = (err && err.message) || String(err);
+            if (msg === 'no-geo') {
+                showFatal('Geolocation not supported in this browser.');
+            } else if (msg === 'denied') {
+                showFatal('Location access was denied. Enable it in browser settings and tap Retry.');
+            } else if (msg === 'unavailable' || msg === 'no-fix') {
+                showFatal('No GPS fix. Step outdoors and tap Retry.');
+            } else if (msg.indexOf('weak:') === 0) {
+                showFatal('GPS too weak (±' + msg.slice(5) + 'm). Move to open sky and tap Retry.');
+            } else if (msg.indexOf('getUserMedia') === 0) {
+                showFatal('Camera API unavailable. Try a different browser.');
+            } else if (err && err.name === 'NotAllowedError') {
+                showFatal('Camera access was denied. Enable it in browser settings and tap Retry.');
+            } else if (err && err.name === 'NotFoundError') {
+                showFatal('No camera found on this device.');
+            } else {
+                showFatal('Startup failed: ' + msg);
+            }
         });
-});
-
-// iOS Safari + 8th Wall: when the user rotates to landscape the
-// camera MediaStreamTrack is paused by the OS and never resumes
-// cleanly — black screen until manual refresh. We don't try to
-// revive in place (XR8.pause/resume doesn't recover a dead track).
-// Strategy: if we ever observe landscape, force a reload when the
-// page returns to portrait. That gets a fresh getUserMedia stream
-// and a fresh SLAM session.
-let xrEverLandscape = false;
-
-function xrCheckOrientation() {
-    const isLandscape = window.matchMedia('(orientation: landscape)').matches;
-    if (isLandscape) {
-        xrEverLandscape = true;
-        return;
-    }
-    if (xrEverLandscape) {
-        // returned to portrait after a rotation — stream is dead, refresh
-        location.reload();
-    }
 }
 
-window.addEventListener('orientationchange', function () {
-    setTimeout(xrCheckOrientation, 300);
+document.addEventListener('DOMContentLoaded', function () {
+    loadAssetPicker();
+    loadLayerPicker();
+
+    const startBtn = document.getElementById('start-btn');
+    if (startBtn) {
+        startBtn.addEventListener('click', function () {
+            startBtn.disabled = true;
+            startBtn.textContent = 'Starting…';
+            bootAR().finally(function () {
+                // re-enable in case showFatal was called and the user wants to
+                // retry without a full reload (though Retry button does reload).
+                startBtn.disabled = false;
+                startBtn.textContent = 'Start AR';
+            });
+        });
+    }
 });
-window.addEventListener('resize', xrCheckOrientation);

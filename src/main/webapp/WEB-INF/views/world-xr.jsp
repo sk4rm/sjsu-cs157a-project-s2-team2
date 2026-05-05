@@ -1,22 +1,23 @@
 <%@ page contentType="text/html; charset=UTF-8" pageEncoding="UTF-8" %>
 <!DOCTYPE html>
 <%--
-    world-xr.jsp — alternate AR view using 8th Wall's open-source XR Engine.
-    Reads the *same* /api/objects endpoint as world.jsp, but replaces AR.js's
-    GPS-driven camera with 8th Wall's SLAM/VIO. GPS is consulted *once* at
-    session start to anchor a local origin; everything afterward is visual
-    tracking, which is why this view feels stable while the user walks.
+    world-xr.jsp — alternate AR view that pairs a raw <video> camera background
+    with A-Frame's look-controls (DeviceOrientation under the hood). Reads the
+    same /api/objects endpoint as world.jsp, but skips AR.js entirely.
 
-    Engine is loaded from jsDelivr (npm: @8thwall/engine-binary). No local
-    binary install required.
+    Trade-off vs. AR.js: GPS is consulted *once* at session start to anchor a
+    local origin, so the scene doesn't swim with every GPS fix. There is no
+    SLAM/VIO — positional tracking is not possible on iOS Safari without a
+    commercial WebAR license — so props stay anchored to lat/lon but the
+    camera does not follow you as you walk. Rotate to look around.
 --%>
 <html>
 
 <head>
-    <title>WARP — XR (beta tracking)</title>
+    <title>WARP — XR</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 
-    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world-xr.css">
+    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world-xr.css?v=xr4">
 
     <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
     <% if ("1".equals(request.getParameter("debug"))) { %>
@@ -24,69 +25,48 @@
     <script>eruda.init();</script>
     <% } %>
 
-    <%-- A-Frame is already used by /world; reuse the same version. --%>
     <script src="https://aframe.io/releases/1.4.0/aframe.min.js"></script>
-
-    <%--
-      8th Wall XR Engine, served from jsDelivr's mirror of the official
-      @8thwall/engine-binary npm package. data-preload-chunks="slam" tells
-      the engine to fetch the SLAM WASM blob upfront so world tracking is
-      ready when the scene starts. This script registers the global XR8
-      object and the <a-scene xrweb> component.
-    --%>
-    <script async
-            src="https://cdn.jsdelivr.net/npm/@8thwall/engine-binary@1/dist/xr.js"
-            crossorigin="anonymous"
-            data-preload-chunks="slam"></script>
 </head>
 
 <body data-warp-comments="<%= request.getContextPath() %>/api/comments"
       data-warp-votes="<%= request.getContextPath() %>/api/votes">
 
+<%-- Camera background. JS attaches a getUserMedia stream to .srcObject after
+     the user taps Start (iOS Safari needs the gesture for sensor permission). --%>
+<video id="camera-feed" autoplay playsinline muted></video>
+
 <div id="loading" class="loading-overlay">
-    <div style="margin-bottom: 16px; font-size: 1.15rem;">Starting XR engine…</div>
-    <div id="loading-sub" style="font-size: 0.8rem; color: #aaa;">Loading SLAM, requesting camera + GPS</div>
-    <button id="retry-btn"
-            style="display:none; margin-top:20px; padding:10px 20px; border-radius:999px; border:1px solid white; background:none; color:white;"
-            onclick="location.reload()">Retry
-    </button>
+    <div id="loading-title" style="margin-bottom: 14px; font-size: 1.2rem;">WARP — XR</div>
+    <div id="loading-sub" style="font-size: 0.85rem; color: #aaa; max-width: 280px; text-align: center; line-height: 1.4;">
+        Tap below to grant camera, motion, and GPS permissions. iOS won't ask without a tap.
+    </div>
+    <button id="start-btn" type="button" class="primary-cta">Start AR</button>
+    <button id="retry-btn" type="button" class="secondary-cta" style="display:none;" onclick="location.reload()">Retry</button>
 </div>
 
 <div id="toast" class="toast"></div>
 
-<div class="landscape-block" role="alertdialog" aria-label="please rotate to portrait">
-    <div class="lb-card">
-        <div class="lb-emoji">⟳</div>
-        <div class="lb-title">Please use portrait mode</div>
-        <div class="lb-sub">iOS Safari drops the camera stream when this view rotates. Hold your phone upright to keep
-            tracking alive.
-        </div>
-    </div>
-</div>
-
 <div class="hud-top">
     <a href="<%= request.getContextPath() %>/" class="hud-btn">← Exit</a>
-    <a href="<%= request.getContextPath() %>/world" class="hud-btn" title="fall back to AR.js GPS view">AR.js mode</a>
+    <a href="<%= request.getContextPath() %>/world" class="hud-btn" title="GPS-anchored AR.js view (jitterier, but follows you as you walk)">AR.js mode</a>
     <div class="status">
-        <div id="status-tracking"><strong>Tracking</strong>: starting…</div>
+        <div id="status-tracking"><strong>Tracking</strong>: idle</div>
         <div id="status-location" style="margin-top: 4px; color: #aaa;">GPS: pending</div>
         <div id="status-objects" style="margin-top: 4px; color: #aaa;">Searching for props…</div>
     </div>
 </div>
 
 <a-scene
-        xrweb="allowedDevices: any; disableWorldTracking: false"
         renderer="colorManagement: true; antialias: true; alpha: true"
         vr-mode-ui="enabled: false"
         embedded>
     <%--
-      look-controls is disabled because 8th Wall's xrweb writes a full 6-DoF
-      SLAM pose into the camera each frame; A-Frame's default look-controls
-      *also* writes rotation from deviceorientation, and the two fight on
-      every rotate, especially landscape↔portrait swings.
+      look-controls drives camera rotation from DeviceOrientation events.
+      magicWindowTrackingEnabled keeps it active outside VR mode. touch/mouse
+      drag is disabled so HUD taps don't accidentally rotate the view.
     --%>
     <a-camera id="xr-camera"
-              look-controls="enabled: false"
+              look-controls="magicWindowTrackingEnabled: true; touchEnabled: false; mouseEnabled: false"
               wasd-controls="enabled: false"
               position="0 1.5 0">
         <a-cursor color="#d37f8f" fuse="false" raycaster="objects: .clickable"></a-cursor>
@@ -115,7 +95,7 @@
             </optgroup>
             <optgroup label="Your uploads" id="asset-picker-uploads"></optgroup>
         </select>
-        <div class="place-hint" id="place-hint">drops where you're standing — XR tracking, no GPS jitter</div>
+        <div class="place-hint" id="place-hint">drops at your GPS origin — rotate to look around</div>
     </div>
     <button class="action-button" onclick="placeAtCamera()" aria-label="place">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.4"
@@ -169,7 +149,7 @@
         if (v) window.WARP.votesUrl = v;
     })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=xr2"></script>
-<script src="<%= request.getContextPath() %>/js/world-xr.js"></script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=xr4"></script>
+<script src="<%= request.getContextPath() %>/js/world-xr.js?v=xr4"></script>
 </body>
 </html>

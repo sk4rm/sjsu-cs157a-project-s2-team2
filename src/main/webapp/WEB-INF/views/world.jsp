@@ -30,7 +30,7 @@
 <div class="hud-top">
     <a href="<%= request.getContextPath() %>/" class="hud-btn">← Exit World</a>
     <a href="<%= request.getContextPath() %>/world-xr" class="hud-btn"
-       title="alternate: 8th Wall SLAM tracking (better on iPhone, needs static/xr setup)">XR mode</a>
+       title="alternate: GPS-locked origin + device-orientation rotation (no SLAM, no scene swim)">XR mode</a>
     <button type="button" class="hud-btn" onclick="placeWorldSpaceTestCube()"
             title="dev: green cube on the ring, not glued to camera">
         test world cube
