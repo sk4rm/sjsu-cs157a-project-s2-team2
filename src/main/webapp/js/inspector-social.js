@@ -156,8 +156,12 @@
             var li = document.createElement('li');
             li.className = 'soc-item';
             var canDel = uid != null && Number(c.commenterId) === Number(uid);
+            // display name comes from user_accounts via SQL join; fall back to
+            // the numeric id if the join was skipped (older deploy / migration).
+            var who = (c.commenterDisplayName && String(c.commenterDisplayName).trim())
+                || ('#' + c.commenterId);
             li.innerHTML =
-                '<span class="soc-meta">#' + c.commenterId + '</span> ' +
+                '<span class="soc-meta">' + escapeHtml(who) + '</span> ' +
                 '<span class="soc-textpart">' + escapeHtml(c.text) + '</span>' +
                 (canDel
                     ? '<button type="button" class="soc-del" data-id="' +

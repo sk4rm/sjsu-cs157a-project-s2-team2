@@ -5,6 +5,7 @@ import java.sql.Timestamp;
 public class Comment {
     private long id;
     private long commenterId;
+    private String commenterDisplayName;
     private long objectId;
     private Timestamp createdAt;
     private String textContent;
@@ -23,6 +24,14 @@ public class Comment {
 
     public void setCommenterId(long commenterId) {
         this.commenterId = commenterId;
+    }
+
+    public String getCommenterDisplayName() {
+        return commenterDisplayName;
+    }
+
+    public void setCommenterDisplayName(String commenterDisplayName) {
+        this.commenterDisplayName = commenterDisplayName;
     }
 
     public long getObjectId() {

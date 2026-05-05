@@ -145,7 +145,7 @@
         if (v) window.WARP.votesUrl = v;
     })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=w1"></script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=w2"></script>
 <script src="<%= request.getContextPath() %>/js/world.js?v=w1"></script>
 </body>
 </html>

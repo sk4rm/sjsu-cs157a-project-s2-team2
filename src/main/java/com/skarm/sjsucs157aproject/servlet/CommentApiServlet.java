@@ -167,6 +167,9 @@ public class CommentApiServlet extends HttpServlet {
                 .add("commenterId", c.getCommenterId())
                 .add("objectId", c.getObjectId())
                 .add("text", c.getTextContent());
+        if (c.getCommenterDisplayName() != null) {
+            b.add("commenterDisplayName", c.getCommenterDisplayName());
+        }
         if (c.getCreatedAt() != null) {
             b.add("createdAt", c.getCreatedAt().getTime());
         }

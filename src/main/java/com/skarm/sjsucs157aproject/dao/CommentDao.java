@@ -9,8 +9,15 @@ import java.util.List;
 
 public class CommentDao {
 
+    // Joined columns are aliased so mapRow can fetch them by name without
+    // colliding with anything else and without depending on column order.
+    private static final String SELECT_COMMENT_WITH_USER =
+            "SELECT c.id, c.commenter_id, c.object_id, c.created_at, c.text_content, "
+            + "u.display_name AS commenter_display_name "
+            + "FROM comments c JOIN user_accounts u ON u.id = c.commenter_id";
+
     public Comment findById(long id) throws SQLException {
-        String sql = "SELECT id, commenter_id, object_id, created_at, text_content FROM comments WHERE id = ?";
+        String sql = SELECT_COMMENT_WITH_USER + " WHERE c.id = ?";
         try (Connection conn = DbUtil.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
             ps.setLong(1, id);
@@ -24,8 +31,7 @@ public class CommentDao {
     }
 
     public List<Comment> findByObjectId(long objectId) throws SQLException {
-        String sql = "SELECT id, commenter_id, object_id, created_at, text_content FROM comments "
-                + "WHERE object_id = ? ORDER BY created_at ASC";
+        String sql = SELECT_COMMENT_WITH_USER + " WHERE c.object_id = ? ORDER BY c.created_at ASC";
         List<Comment> out = new ArrayList<>();
         try (Connection conn = DbUtil.getConnection();
              PreparedStatement ps = conn.prepareStatement(sql)) {
@@ -73,6 +79,7 @@ public class CommentDao {
         Comment c = new Comment();
         c.setId(rs.getLong("id"));
         c.setCommenterId(rs.getLong("commenter_id"));
+        c.setCommenterDisplayName(rs.getString("commenter_display_name"));
         c.setObjectId(rs.getLong("object_id"));
         c.setCreatedAt(rs.getTimestamp("created_at"));
         c.setTextContent(rs.getString("text_content"));
