@@ -518,21 +518,86 @@ function loadObjects() {
         });
 }
 
-function placeAtCamera() {
+// Ray from screen-center through the camera frustum, intersected with the
+// ground plane (y=0). Returns world-space (x, z) the user is aiming at.
+// Falls back to a point 2m in front when looking above the horizon.
+function computeCursorTarget(scene) {
+    const THREE = window.THREE;
+    const cam = scene && scene.camera;
+    const camEl = document.getElementById('xr-camera');
+    if (!cam || !camEl || !THREE) return null;
+
+    const raycaster = new THREE.Raycaster();
+    raycaster.setFromCamera(new THREE.Vector2(0, 0), cam);
+    const groundPlane = new THREE.Plane(new THREE.Vector3(0, 1, 0), 0);
+    const hitPoint = new THREE.Vector3();
+    if (raycaster.ray.intersectPlane(groundPlane, hitPoint)) {
+        return {x: hitPoint.x, z: hitPoint.z, hitGround: true};
+    }
+    const origin = new THREE.Vector3();
+    const dir = new THREE.Vector3();
+    camEl.object3D.getWorldPosition(origin);
+    camEl.object3D.getWorldDirection(dir);
+    const FALLBACK_DIST = 2;
+    return {
+        x: origin.x + dir.x * FALLBACK_DIST,
+        z: origin.z + dir.z * FALLBACK_DIST,
+        hitGround: false
+    };
+}
+
+// Visual indicator for where placeAtCursor will drop the next object.
+// Green when aimed at the ground, amber-ish when looking up (fallback dist).
+let placementReticleRaf = null;
+
+function ensurePlacementReticle(scene) {
+    let el = document.getElementById('placement-reticle');
+    if (el) return el;
+    el = document.createElement('a-entity');
+    el.setAttribute('id', 'placement-reticle');
+    const ring = document.createElement('a-ring');
+    ring.setAttribute('radius-inner', '0.11');
+    ring.setAttribute('radius-outer', '0.17');
+    ring.setAttribute('rotation', '-90 0 0');
+    ring.setAttribute('material', 'color: #2ecc71; opacity: 0.72; shader: flat; side: double');
+    el.appendChild(ring);
+    scene.appendChild(el);
+    return el;
+}
+
+function startPlacementReticleLoop(scene) {
+    function tick() {
+        const t = computeCursorTarget(scene);
+        const reticle = document.getElementById('placement-reticle');
+        if (t && reticle) {
+            reticle.setAttribute('visible', true);
+            reticle.setAttribute('position', t.x + ' 0 ' + t.z);
+            const ring = reticle.firstChild;
+            if (ring) {
+                ring.setAttribute('material',
+                    'color: ' + (t.hitGround ? '#2ecc71' : '#f5a623') +
+                    '; opacity: 0.72; shader: flat; side: double');
+            }
+        }
+        placementReticleRaf = window.requestAnimationFrame(tick);
+    }
+    if (placementReticleRaf) window.cancelAnimationFrame(placementReticleRaf);
+    ensurePlacementReticle(scene);
+    placementReticleRaf = window.requestAnimationFrame(tick);
+}
+
+function placeAtCursor() {
     if (originLat == null) {
         showToast('GPS origin not locked yet', true);
         return;
     }
-    const camEl = document.getElementById('xr-camera');
-    if (!camEl || !camEl.object3D) {
-        showToast('camera not ready', true);
+    const scene = document.querySelector('a-scene');
+    const target = computeCursorTarget(scene);
+    if (!target) {
+        showToast('scene not ready', true);
         return;
     }
-    // Without SLAM the camera object3D stays at its origin (0, 1.5, 0). That
-    // means "place at camera" effectively drops at the GPS origin, which is
-    // the right behavior here — the user is standing at the origin point.
-    const p = camEl.object3D.position;
-    const ll = localToLatLon(p.x, p.z);
+    const ll = localToLatLon(target.x, target.z);
     if (!ll) {
         showToast('cannot project to lat/lon', true);
         return;
@@ -603,6 +668,7 @@ function bootAR() {
             const scene = document.querySelector('a-scene');
             const onReady = function () {
                 hideLoading();
+                startPlacementReticleLoop(scene);
                 loadObjects();
             };
             if (scene && scene.hasLoaded) onReady();

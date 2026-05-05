@@ -17,7 +17,7 @@
     <title>WARP — XR</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 
-    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world-xr.css?v=xr4">
+    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world-xr.css?v=xr5">
 
     <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
     <% if ("1".equals(request.getParameter("debug"))) { %>
@@ -95,9 +95,9 @@
             </optgroup>
             <optgroup label="Your uploads" id="asset-picker-uploads"></optgroup>
         </select>
-        <div class="place-hint" id="place-hint">drops at your GPS origin — rotate to look around</div>
+        <div class="place-hint" id="place-hint">aim the green ring, then tap + to drop</div>
     </div>
-    <button class="action-button" onclick="placeAtCamera()" aria-label="place">
+    <button class="action-button" onclick="placeAtCursor()" aria-label="place">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.4"
              stroke-linecap="round" stroke-linejoin="round">
             <line x1="12" y1="5" x2="12" y2="19"></line>
@@ -149,7 +149,7 @@
         if (v) window.WARP.votesUrl = v;
     })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=xr4"></script>
-<script src="<%= request.getContextPath() %>/js/world-xr.js?v=xr4"></script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=xr5"></script>
+<script src="<%= request.getContextPath() %>/js/world-xr.js?v=xr5"></script>
 </body>
 </html>
