@@ -14,7 +14,7 @@
     <title>WARP — World</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 
-    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world.css?v=w1">
+    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world.css?v=w4">
 
     <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
     <% if ("1".equals(request.getParameter("debug"))) { %>
@@ -80,9 +80,14 @@
         <label for="signpost-text"></label>
         <input id="signpost-text" class="signpost-input" type="text" maxlength="80"
                placeholder="signpost message (signpost mode only)" disabled>
-        <select id="layer-picker" class="signpost-input" title="Filter view by layer; also tags new placements" aria-label="Layer filter">
-            <option value="">All layers</option>
-        </select>
+        <div class="layer-row">
+            <select id="layer-picker" class="signpost-input" title="Filter view by layer; also tags new placements" aria-label="Layer filter">
+                <option value="">All layers</option>
+            </select>
+            <button type="button" id="layer-new-btn" class="layer-btn" title="Create a new layer" onclick="onLayerNew()">+</button>
+            <button type="button" id="layer-rename-btn" class="layer-btn" title="Rename selected layer" onclick="onLayerRename()" disabled>✎</button>
+            <button type="button" id="layer-delete-btn" class="layer-btn" title="Delete selected layer" onclick="onLayerDelete()" disabled>×</button>
+        </div>
         <select id="asset-picker" class="signpost-input" title="Shape or uploaded model for cube placements">
             <optgroup label="Standard props">
                 <option value="preset:cube" selected>Cube</option>
@@ -145,7 +150,7 @@
         if (v) window.WARP.votesUrl = v;
     })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=w2"></script>
-<script src="<%= request.getContextPath() %>/js/world.js?v=w1"></script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=w4"></script>
+<script src="<%= request.getContextPath() %>/js/world.js?v=w4"></script>
 </body>
 </html>

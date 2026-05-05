@@ -1,8 +1,13 @@
 const API_URL = window.WARP.apiUrl;
 const ASSETS_URL = window.WARP.assetsUrl;
+const LAYERS_URL = window.WARP.layersUrl;
 const sessionUserId = window.WARP.userId;
 const LAYER_FILTER_KEY = 'warp-active-layer-id';
 let selectedObjectId = null;
+let currentInspectorObj = null;
+// {String(layerId): name} — kept in sync with the picker so chips and the
+// inspector can show names without a second round-trip per render.
+let layersById = {};
 
 // fileHash convention: "asset:<id>" → uploaded glTF; "preset:*" → built-in shape; legacy hashes → cube.
 function parseAssetId(fileHash) {
@@ -52,28 +57,241 @@ function loadAssetPicker() {
 
 function loadLayerPicker() {
     const sel = document.getElementById('layer-picker');
-    const url = window.WARP && window.WARP.layersUrl;
-    if (!sel || !url) return;
-    fetch(url, {credentials: 'same-origin'})
+    if (!sel || !LAYERS_URL) return;
+    reloadLayerPicker(undefined).then(function () {
+        if (originLat != null) loadObjects();
+    });
+    sel.addEventListener('change', function () {
+        localStorage.setItem(LAYER_FILTER_KEY, sel.value || '');
+        updateLayerToolbarState();
+        loadObjects();
+    });
+}
+
+// Re-fetch the layer list, repopulate the dropdown + layersById map, and
+// restore selection. Pass a layerId to force-select that one, '' to deselect,
+// or undefined to fall back to localStorage.
+function reloadLayerPicker(forcedSelection) {
+    const sel = document.getElementById('layer-picker');
+    if (!sel || !LAYERS_URL) return Promise.resolve();
+    return fetch(LAYERS_URL, {credentials: 'same-origin'})
         .then(function (r) { return r.ok ? r.json() : []; })
         .then(function (layers) {
+            layersById = {};
             while (sel.options.length > 1) sel.remove(1);
             layers.forEach(function (L) {
+                layersById[String(L.layerId)] = L.name;
                 const opt = document.createElement('option');
                 opt.value = String(L.layerId);
                 opt.textContent = L.name;
                 sel.appendChild(opt);
             });
-            const saved = localStorage.getItem(LAYER_FILTER_KEY);
-            if (saved && Array.prototype.some.call(sel.options, function (o) { return o.value === saved; })) {
-                sel.value = saved;
+            let target;
+            if (forcedSelection === undefined) {
+                target = localStorage.getItem(LAYER_FILTER_KEY) || '';
+            } else {
+                target = forcedSelection == null ? '' : String(forcedSelection);
             }
-            if (originLat != null) loadObjects();
+            sel.value = layersById[target] != null ? target : '';
+            localStorage.setItem(LAYER_FILTER_KEY, sel.value || '');
+            updateLayerToolbarState();
         })
-        .catch(function () { /* All layers only */ });
-    sel.addEventListener('change', function () {
-        localStorage.setItem(LAYER_FILTER_KEY, sel.value || '');
-        loadObjects();
+        .catch(function () { updateLayerToolbarState(); });
+}
+
+function updateLayerToolbarState() {
+    const sel = document.getElementById('layer-picker');
+    const renameBtn = document.getElementById('layer-rename-btn');
+    const deleteBtn = document.getElementById('layer-delete-btn');
+    const has = !!(sel && sel.value);
+    if (renameBtn) renameBtn.disabled = !has;
+    if (deleteBtn) deleteBtn.disabled = !has;
+}
+
+// In-page replacement for window.prompt / window.confirm. Native dialogs
+// pause the camera MediaStreamTrack on iOS Safari — same bug family as the
+// inspector's two-step delete confirm. The DOM is built synchronously inside
+// the user-gesture call so iOS still allows the input to focus + raise the
+// virtual keyboard. Returns a Promise: prompt → string|null, confirm → bool.
+function showSoftDialog(opts) {
+    return new Promise(function (resolve) {
+        const backdrop = document.createElement('div');
+        backdrop.className = 'soft-backdrop';
+        const dialog = document.createElement('div');
+        dialog.className = 'soft-dialog';
+
+        const titleEl = document.createElement('div');
+        titleEl.className = 'soft-title';
+        titleEl.textContent = opts.title || '';
+        dialog.appendChild(titleEl);
+
+        if (opts.body) {
+            const bodyEl = document.createElement('div');
+            bodyEl.className = 'soft-body';
+            bodyEl.textContent = opts.body;
+            dialog.appendChild(bodyEl);
+        }
+
+        let input = null;
+        if (opts.input) {
+            input = document.createElement('input');
+            input.type = 'text';
+            input.className = 'soft-input';
+            input.value = opts.defaultValue || '';
+            if (opts.placeholder) input.placeholder = opts.placeholder;
+            input.maxLength = opts.maxLength || 45;
+            input.autocomplete = 'off';
+            input.spellcheck = false;
+            dialog.appendChild(input);
+        }
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'soft-btn-row';
+        const cancelBtn = document.createElement('button');
+        cancelBtn.type = 'button';
+        cancelBtn.className = 'soft-btn soft-btn-cancel';
+        cancelBtn.textContent = opts.cancelText || 'Cancel';
+        const okBtn = document.createElement('button');
+        okBtn.type = 'button';
+        okBtn.className = 'soft-btn soft-btn-ok' + (opts.danger ? ' soft-btn-danger' : '');
+        okBtn.textContent = opts.okText || 'OK';
+        btnRow.appendChild(cancelBtn);
+        btnRow.appendChild(okBtn);
+        dialog.appendChild(btnRow);
+
+        backdrop.appendChild(dialog);
+        document.body.appendChild(backdrop);
+
+        function cleanup() {
+            document.removeEventListener('keydown', onKey);
+            backdrop.remove();
+        }
+        function onCancel() {
+            cleanup();
+            resolve(opts.input ? null : false);
+        }
+        function onOk() {
+            const result = opts.input ? input.value : true;
+            cleanup();
+            resolve(result);
+        }
+        function onKey(e) {
+            if (e.key === 'Escape') {
+                e.preventDefault();
+                onCancel();
+            } else if (e.key === 'Enter') {
+                if (!input || document.activeElement === input) {
+                    e.preventDefault();
+                    onOk();
+                }
+            }
+        }
+        cancelBtn.addEventListener('click', onCancel);
+        okBtn.addEventListener('click', onOk);
+        backdrop.addEventListener('click', function (e) {
+            if (e.target === backdrop) onCancel();
+        });
+        document.addEventListener('keydown', onKey);
+
+        if (input) {
+            // Stay synchronous — iOS only honors focus() that happens inside
+            // the original user-gesture stack frame.
+            input.focus();
+            try { input.select(); } catch (e) {}
+        }
+    });
+}
+
+function softPrompt(title, defaultValue) {
+    return showSoftDialog({title: title, input: true, defaultValue: defaultValue});
+}
+
+function softConfirm(title, body) {
+    return showSoftDialog({title: title, body: body, okText: 'Yes', danger: true});
+}
+
+function onLayerNew() {
+    softPrompt('New layer name').then(function (raw) {
+        if (raw == null) return;
+        const name = raw.trim();
+        if (!name) return;
+        const fd = new URLSearchParams();
+        fd.append('name', name);
+        fetch(LAYERS_URL, {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: fd
+        }).then(function (r) {
+            if (!r.ok) {
+                showToast('create failed (' + r.status + ')', true);
+                return;
+            }
+            return r.json().then(function (created) {
+                return reloadLayerPicker(created.layerId).then(function () {
+                    showToast('layer created');
+                    if (currentInspectorObj) renderInspectorLayers(currentInspectorObj);
+                    loadObjects();
+                });
+            });
+        }).catch(function () { showToast('network error', true); });
+    });
+}
+
+function onLayerRename() {
+    const sel = document.getElementById('layer-picker');
+    if (!sel || !sel.value) return;
+    const id = sel.value;
+    const oldName = sel.options[sel.selectedIndex].text;
+    softPrompt('Rename layer', oldName).then(function (raw) {
+        if (raw == null) return;
+        const name = raw.trim();
+        if (!name || name === oldName) return;
+        const fd = new URLSearchParams();
+        fd.append('name', name);
+        fetch(LAYERS_URL + '/' + id, {
+            method: 'PATCH',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: fd
+        }).then(function (r) {
+            if (!r.ok) {
+                showToast('rename failed (' + r.status + ')', true);
+                return;
+            }
+            return reloadLayerPicker(id).then(function () {
+                showToast('layer renamed');
+                if (currentInspectorObj) renderInspectorLayers(currentInspectorObj);
+            });
+        }).catch(function () { showToast('network error', true); });
+    });
+}
+
+function onLayerDelete() {
+    const sel = document.getElementById('layer-picker');
+    if (!sel || !sel.value) return;
+    const id = sel.value;
+    const name = sel.options[sel.selectedIndex].text;
+    softConfirm('Delete layer "' + name + '"?', 'Objects stay; they just lose this tag.').then(function (yes) {
+        if (!yes) return;
+        fetch(LAYERS_URL + '/' + id, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        }).then(function (r) {
+            if (!r.ok && r.status !== 204) {
+                showToast('delete failed (' + r.status + ')', true);
+                return;
+            }
+            return reloadLayerPicker('').then(function () {
+                showToast('layer deleted');
+                if (currentInspectorObj) {
+                    currentInspectorObj.layerIds = (currentInspectorObj.layerIds || [])
+                        .filter(function (l) { return Number(l) !== Number(id); });
+                    renderInspectorLayers(currentInspectorObj);
+                }
+                loadObjects();
+            });
+        }).catch(function () { showToast('network error', true); });
     });
 }
 
@@ -118,6 +336,7 @@ function applyObjectsList(scene, list) {
 
 function openInspector(obj) {
     selectedObjectId = obj.id;
+    currentInspectorObj = obj;
     document.getElementById('inspector-title').innerText = obj.type === 'signpost' ? 'Signpost' : 'Prop';
 
     let bodyHtml = '<strong>ID:</strong> ' + obj.id + '<br>';
@@ -128,11 +347,11 @@ function openInspector(obj) {
     }
     bodyHtml += '<strong>Lat:</strong> ' + obj.latitude.toFixed(6) + '<br>';
     bodyHtml += '<strong>Lng:</strong> ' + obj.longitude.toFixed(6);
-    if (obj.layerIds && obj.layerIds.length) {
-        bodyHtml += '<br><strong>Layers:</strong> #' + obj.layerIds.join(', #');
-    }
+    bodyHtml += '<br><strong>Layers:</strong>';
+    bodyHtml += '<div id="inspector-layers" class="inspector-layers"></div>';
 
     document.getElementById('inspector-body').innerHTML = bodyHtml;
+    renderInspectorLayers(obj);
 
     const deleteBtn = document.getElementById('inspector-delete');
     if (obj.userId === sessionUserId) {
@@ -148,9 +367,72 @@ function openInspector(obj) {
     }
 }
 
+function renderInspectorLayers(obj) {
+    const container = document.getElementById('inspector-layers');
+    if (!container) return;
+    container.innerHTML = '';
+    const memberSet = new Set((obj.layerIds || []).map(Number));
+    const keys = Object.keys(layersById);
+    if (keys.length === 0) {
+        const empty = document.createElement('span');
+        empty.className = 'layer-chip-empty';
+        empty.textContent = 'no layers — create one with the + button';
+        container.appendChild(empty);
+        return;
+    }
+    // Stable sort by id so chip order doesn't jump around between renders.
+    keys.sort(function (a, b) { return Number(a) - Number(b); }).forEach(function (k) {
+        const lid = Number(k);
+        const isMember = memberSet.has(lid);
+        const chip = document.createElement('button');
+        chip.type = 'button';
+        chip.className = 'layer-chip' + (isMember ? ' on' : '');
+        chip.textContent = layersById[k];
+        chip.addEventListener('click', function () {
+            toggleLayerMembership(obj, lid, !isMember);
+        });
+        container.appendChild(chip);
+    });
+}
+
+function toggleLayerMembership(obj, layerId, makeMember) {
+    let req;
+    if (makeMember) {
+        const fd = new URLSearchParams();
+        fd.append('objectId', String(obj.id));
+        req = fetch(LAYERS_URL + '/' + layerId + '/objects', {
+            method: 'POST',
+            credentials: 'same-origin',
+            headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+            body: fd
+        });
+    } else {
+        req = fetch(LAYERS_URL + '/' + layerId + '/objects/' + obj.id, {
+            method: 'DELETE',
+            credentials: 'same-origin'
+        });
+    }
+    req.then(function (r) {
+        if (!r.ok && r.status !== 204) {
+            showToast('layer toggle failed (' + r.status + ')', true);
+            return;
+        }
+        if (!Array.isArray(obj.layerIds)) obj.layerIds = [];
+        if (makeMember) {
+            if (obj.layerIds.indexOf(layerId) < 0) obj.layerIds.push(layerId);
+        } else {
+            obj.layerIds = obj.layerIds.filter(function (l) { return Number(l) !== Number(layerId); });
+        }
+        renderInspectorLayers(obj);
+    }).catch(function () {
+        showToast('network error', true);
+    });
+}
+
 function closeInspector() {
     document.getElementById('inspector').classList.remove('show');
     selectedObjectId = null;
+    currentInspectorObj = null;
     resetDeleteConfirm();
     if (typeof clearInspectorSocial === 'function') {
         clearInspectorSocial();

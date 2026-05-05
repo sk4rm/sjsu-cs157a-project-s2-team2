@@ -1,6 +1,7 @@
 package com.skarm.sjsucs157aproject.servlet;
 
 import com.skarm.sjsucs157aproject.dao.LayerDao;
+import com.skarm.sjsucs157aproject.dao.VirtualObjectDao;
 import com.skarm.sjsucs157aproject.model.Layer;
 import jakarta.json.Json;
 import jakarta.json.JsonArrayBuilder;
@@ -28,6 +29,7 @@ public class LayerApiServlet extends HttpServlet {
 
 
     private final LayerDao layerDao = new LayerDao();
+    private final VirtualObjectDao objectDao = new VirtualObjectDao();
 
     @Override
     protected void doGet(HttpServletRequest req, HttpServletResponse resp) throws ServletException, IOException {
@@ -61,6 +63,13 @@ public class LayerApiServlet extends HttpServlet {
             return;
         }
 
+        // POST /api/layers/<layerId>/objects → add membership
+        long[] nested = parseLayerObjectsPath(req);
+        if (nested != null) {
+            handleAddMembership(req, resp, nested[0]);
+            return;
+        }
+
         String rawName = req.getParameter("name");
         String name = rawName == null ? "" : rawName.trim();
         if (name.isEmpty()) {
@@ -83,6 +92,30 @@ public class LayerApiServlet extends HttpServlet {
                     .toString());
         } catch (SQLException e) {
             getServletContext().log("POST /api/layers failed", e);
+            sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+        }
+    }
+
+    private void handleAddMembership(HttpServletRequest req, HttpServletResponse resp, long layerId) throws IOException {
+        String rawObj = req.getParameter("objectId");
+        Long objectId = parseLong(rawObj);
+        if (objectId == null) {
+            sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing objectId");
+            return;
+        }
+        try {
+            if (!layerDao.exists(layerId)) {
+                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Layer not found");
+                return;
+            }
+            if (objectDao.findById(objectId) == null) {
+                sendError(resp, HttpServletResponse.SC_NOT_FOUND, "Object not found");
+                return;
+            }
+            layerDao.addObjectToLayer(layerId, objectId);
+            resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+        } catch (SQLException e) {
+            getServletContext().log("POST /api/layers/<id>/objects failed", e);
             sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
         }
     }
@@ -134,6 +167,24 @@ public class LayerApiServlet extends HttpServlet {
             return;
         }
 
+        // DELETE /api/layers/<layerId>/objects/<objectId> → remove membership
+        long[] nested = parseLayerObjectsPath(req);
+        if (nested != null) {
+            if (nested.length < 2) {
+                sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing objectId in path");
+                return;
+            }
+            try {
+                layerDao.removeObjectFromLayer(nested[0], nested[1]);
+                // Idempotent: 204 even if no row was matched.
+                resp.setStatus(HttpServletResponse.SC_NO_CONTENT);
+            } catch (SQLException e) {
+                getServletContext().log("DELETE /api/layers/<id>/objects/<oid> failed", e);
+                sendError(resp, HttpServletResponse.SC_INTERNAL_SERVER_ERROR, "Internal error");
+            }
+            return;
+        }
+
         Long layerId = parseIdFromPath(req);
         if (layerId == null) {
             sendError(resp, HttpServletResponse.SC_BAD_REQUEST, "Missing layer id");
@@ -167,8 +218,51 @@ public class LayerApiServlet extends HttpServlet {
         if (pathInfo == null || pathInfo.length() <= 1) {
             return null;
         }
+        // Only treat as a "layer id" path if it's a single segment of digits;
+        // nested /<id>/objects[/<oid>] paths are handled separately.
+        String trimmed = pathInfo.substring(1);
+        if (trimmed.indexOf('/') >= 0) {
+            return null;
+        }
         try {
-            return Long.parseLong(pathInfo.substring(1));
+            return Long.parseLong(trimmed);
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Parses /<layerId>/objects[/<objectId>] from pathInfo.
+     * Returns null if not a layer-objects path.
+     * Returns [layerId] for the collection path, [layerId, objectId] for the item path.
+     */
+    private long[] parseLayerObjectsPath(HttpServletRequest req) {
+        String pathInfo = req.getPathInfo();
+        if (pathInfo == null || pathInfo.length() <= 1) {
+            return null;
+        }
+        String[] parts = pathInfo.substring(1).split("/");
+        if (parts.length < 2 || !"objects".equals(parts[1])) {
+            return null;
+        }
+        try {
+            long layerId = Long.parseLong(parts[0]);
+            if (parts.length == 2) {
+                return new long[]{layerId};
+            }
+            long objectId = Long.parseLong(parts[2]);
+            return new long[]{layerId, objectId};
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    private Long parseLong(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        try {
+            return Long.parseLong(raw.trim());
         } catch (NumberFormatException e) {
             return null;
         }

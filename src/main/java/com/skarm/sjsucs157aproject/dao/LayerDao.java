@@ -73,6 +73,29 @@ public class LayerDao {
         }
     }
 
+    /**
+     * Removes an object from a layer. Returns true if a row was deleted.
+     */
+    public boolean removeObjectFromLayer(long layerId, long objectId) throws SQLException {
+        String sql = "DELETE FROM includes WHERE layer_id = ? AND object_id = ?";
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, layerId);
+            ps.setLong(2, objectId);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    public boolean exists(long layerId) throws SQLException {
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement("SELECT 1 FROM layers WHERE layer_id = ?")) {
+            ps.setLong(1, layerId);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
     public boolean delete(long layerId) throws SQLException {
         try (Connection conn = DbUtil.getConnection()) {
             conn.setAutoCommit(false);
