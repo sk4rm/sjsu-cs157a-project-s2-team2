@@ -243,6 +243,47 @@
 
         .upload-status.ok { color: #2f7a3a; }
         .upload-status.err { color: #a1354b; }
+
+        /* Friends section reuses the dashed-divider visual of .asset-zone. */
+        .friends-zone {
+            margin-top: 32px;
+            padding-top: 16px;
+            border-top: 1px dashed var(--border-soft);
+        }
+
+        .friends-zone h2 {
+            margin: 0 0 8px;
+            font-size: 1rem;
+            color: var(--accent-rose);
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .friends-zone p {
+            color: var(--text-muted);
+            font-size: 0.85rem;
+            margin: 4px 0 12px;
+        }
+
+        .friends-subhead {
+            margin: 18px 0 6px;
+            font-size: 0.85rem;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+        }
+
+        .friends-zone .add-btn {
+            background: linear-gradient(135deg, var(--accent-rose), var(--accent-rose-soft));
+            color: #ffffff;
+            border: none;
+            border-radius: 999px;
+            font-size: 0.75rem;
+            padding: 4px 12px;
+            margin: 0;
+            box-shadow: none;
+            cursor: pointer;
+        }
     </style>
 </head>
 <body>
@@ -288,6 +329,165 @@
 
         <button type="submit">Save changes</button>
     </form>
+
+    <div class="friends-zone">
+        <h2>Friends</h2>
+        <p>Search by display name or username. Adding is instant; removing is too — there's no pending state.</p>
+
+        <label for="friend-search">Find someone</label>
+        <input type="search" id="friend-search" placeholder="Type a name or username…" autocomplete="off">
+        <div id="friend-status" class="upload-status"></div>
+
+        <ul id="friend-search-results" class="asset-list" style="display:none;"></ul>
+
+        <div class="friends-subhead">Your friends</div>
+        <ul id="friends-list" class="asset-list">
+            <li class="empty">Loading…</li>
+        </ul>
+    </div>
+
+    <script>
+        (function () {
+            const ctx = '<%= request.getContextPath() %>';
+            const searchInput = document.getElementById('friend-search');
+            const resultsEl = document.getElementById('friend-search-results');
+            const friendsEl = document.getElementById('friends-list');
+            const statusEl = document.getElementById('friend-status');
+
+            let searchTimer = null;
+            let lastQuery = '';
+
+            function setStatus(msg, kind) {
+                statusEl.textContent = msg || '';
+                statusEl.className = 'upload-status' + (kind ? ' ' + kind : '');
+            }
+
+            function escapeText(s) {
+                const d = document.createElement('span');
+                d.textContent = s == null ? '' : String(s);
+                return d.innerHTML;
+            }
+
+            function buildRow(u, btnLabel, btnClass, onClick) {
+                const li = document.createElement('li');
+                const left = document.createElement('span');
+                left.innerHTML = escapeText(u.displayName) +
+                    '<span class="meta">@' + escapeText(u.username) +
+                    (u.userId ? ' · #' + u.userId : '') + '</span>';
+                li.appendChild(left);
+                const btn = document.createElement('button');
+                btn.type = 'button';
+                btn.className = btnClass;
+                btn.textContent = btnLabel;
+                btn.onclick = onClick;
+                li.appendChild(btn);
+                return li;
+            }
+
+            function renderFriends(list) {
+                if (!list.length) {
+                    friendsEl.innerHTML = '<li class="empty">No friends yet — search above to add some.</li>';
+                    return;
+                }
+                friendsEl.innerHTML = '';
+                list.forEach(function (u) {
+                    friendsEl.appendChild(buildRow(u, 'Remove', 'del', function () { onRemove(u); }));
+                });
+            }
+
+            function refreshFriends() {
+                return fetch(ctx + '/api/friends', { credentials: 'same-origin' })
+                    .then(function (r) { return r.ok ? r.json() : []; })
+                    .then(renderFriends)
+                    .catch(function () {
+                        friendsEl.innerHTML = '<li class="empty">Could not load friends.</li>';
+                    });
+            }
+
+            function renderSearchResults(list) {
+                resultsEl.style.display = '';
+                if (!list.length) {
+                    resultsEl.innerHTML = '<li class="empty">No matches.</li>';
+                    return;
+                }
+                resultsEl.innerHTML = '';
+                list.forEach(function (u) {
+                    const isFriend = !!u.isFriend;
+                    const row = buildRow(
+                        u,
+                        isFriend ? 'Remove' : 'Add',
+                        isFriend ? 'del' : 'add-btn',
+                        function () {
+                            if (isFriend) onRemove(u, function () { runSearch(lastQuery); });
+                            else onAdd(u, function () { runSearch(lastQuery); });
+                        }
+                    );
+                    resultsEl.appendChild(row);
+                });
+            }
+
+            function runSearch(q) {
+                lastQuery = q;
+                if (!q) {
+                    resultsEl.style.display = 'none';
+                    resultsEl.innerHTML = '';
+                    setStatus('');
+                    return;
+                }
+                fetch(ctx + '/api/users?q=' + encodeURIComponent(q), { credentials: 'same-origin' })
+                    .then(function (r) { return r.ok ? r.json() : []; })
+                    .then(renderSearchResults)
+                    .catch(function () { setStatus('Search failed', 'err'); });
+            }
+
+            function onAdd(u, after) {
+                // URLSearchParams + explicit content-type so the servlet's
+                // req.getParameter() picks it up. FormData sends multipart,
+                // which only @MultipartConfig servlets parse.
+                const fd = new URLSearchParams();
+                fd.append('userId', String(u.userId));
+                fetch(ctx + '/api/friends', {
+                    method: 'POST',
+                    credentials: 'same-origin',
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: fd
+                }).then(function (r) {
+                    if (r.ok || r.status === 204) {
+                        setStatus('Added ' + u.displayName, 'ok');
+                        refreshFriends();
+                        if (after) after();
+                    } else {
+                        setStatus('Could not add (' + r.status + ')', 'err');
+                    }
+                }).catch(function () { setStatus('Network error', 'err'); });
+            }
+
+            function onRemove(u, after) {
+                if (!confirm('Remove "' + u.displayName + '" from your friends?')) return;
+                fetch(ctx + '/api/friends/' + u.userId, {
+                    method: 'DELETE',
+                    credentials: 'same-origin'
+                }).then(function (r) {
+                    if (r.ok || r.status === 204) {
+                        setStatus('Removed ' + u.displayName, 'ok');
+                        refreshFriends();
+                        if (after) after();
+                    } else {
+                        setStatus('Could not remove (' + r.status + ')', 'err');
+                    }
+                }).catch(function () { setStatus('Network error', 'err'); });
+            }
+
+            searchInput.addEventListener('input', function () {
+                clearTimeout(searchTimer);
+                const q = searchInput.value.trim();
+                // Debounce so we don't spam /api/users on every keystroke.
+                searchTimer = setTimeout(function () { runSearch(q); }, 250);
+            });
+
+            refreshFriends();
+        })();
+    </script>
 
     <div class="asset-zone">
         <h2>3D Model Library</h2>

@@ -4,6 +4,8 @@ import com.skarm.sjsucs157aproject.model.User;
 import com.skarm.sjsucs157aproject.util.DbUtil;
 
 import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
 
 // user table stuff
 public class UserDao {
@@ -99,6 +101,55 @@ public class UserDao {
                 conn.setAutoCommit(true);
             }
         }
+    }
+
+    /**
+     * Case-insensitive LIKE search across username and display_name. Always
+     * excludes the requesting user. Each result includes whether the
+     * requester is already friends with that user (LEFT JOIN on befriends).
+     */
+    public List<UserSearchResult> searchByQuery(String query, long requesterId, int limit) throws SQLException {
+        String like = "%" + query + "%";
+        String sql = "SELECT u.id, u.display_name, u.username, "
+                + "       (b.user_id_1 IS NOT NULL) AS is_friend "
+                + "FROM user_accounts u "
+                + "LEFT JOIN befriends b ON ("
+                + "    (b.user_id_1 = ? AND b.user_id_2 = u.id) OR "
+                + "    (b.user_id_2 = ? AND b.user_id_1 = u.id)"
+                + ") "
+                + "WHERE u.id <> ? "
+                + "  AND (u.username LIKE ? OR u.display_name LIKE ?) "
+                + "ORDER BY u.display_name "
+                + "LIMIT ?";
+        List<UserSearchResult> out = new ArrayList<>();
+        try (Connection conn = DbUtil.getConnection();
+             PreparedStatement ps = conn.prepareStatement(sql)) {
+            ps.setLong(1, requesterId);
+            ps.setLong(2, requesterId);
+            ps.setLong(3, requesterId);
+            ps.setString(4, like);
+            ps.setString(5, like);
+            ps.setInt(6, Math.max(1, Math.min(limit, 50)));
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    UserSearchResult r = new UserSearchResult();
+                    r.userId = rs.getLong("id");
+                    r.displayName = rs.getString("display_name");
+                    r.username = rs.getString("username");
+                    r.isFriend = rs.getBoolean("is_friend");
+                    out.add(r);
+                }
+            }
+        }
+        return out;
+    }
+
+    /** Lightweight projection for /api/users search responses. */
+    public static class UserSearchResult {
+        public long userId;
+        public String displayName;
+        public String username;
+        public boolean isFriend;
     }
 
     private User mapRow(ResultSet rs) throws SQLException {
