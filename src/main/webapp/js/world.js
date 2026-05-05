@@ -505,6 +505,30 @@ function setPlaceMode(mode) {
     document.getElementById('signpost-text').disabled = (mode !== 'signpost');
 }
 
+const PLACE_BAR_COLLAPSED_KEY = 'warp-place-bar-collapsed';
+
+function setPlaceBarCollapsed(collapsed) {
+    const bar = document.getElementById('place-bar');
+    if (!bar) return;
+    bar.classList.toggle('collapsed', !!collapsed);
+    const handle = bar.querySelector('.place-bar-handle');
+    if (handle) handle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+    try { localStorage.setItem(PLACE_BAR_COLLAPSED_KEY, collapsed ? '1' : '0'); } catch (e) {}
+}
+
+function togglePlaceBar() {
+    const bar = document.getElementById('place-bar');
+    if (!bar) return;
+    setPlaceBarCollapsed(!bar.classList.contains('collapsed'));
+}
+
+function initPlaceBarCollapse() {
+    let saved = null;
+    try { saved = localStorage.getItem(PLACE_BAR_COLLAPSED_KEY); } catch (e) {}
+    // Default expanded for first-time users; honor stored choice afterwards.
+    setPlaceBarCollapsed(saved === '1');
+}
+
 function showToast(msg, isErr) {
     const t = document.getElementById('toast');
     t.textContent = msg;
@@ -904,6 +928,104 @@ function startPlacementReticleLoop(scene) {
     placementReticleRaf = window.requestAnimationFrame(tick);
 }
 
+// ---- joystick movement ----
+
+// Normalized [-1, 1] joystick output. y is +1 when the knob is pushed UP
+// (forward in the scene) — we invert dy from screen space at read time.
+const joystickValue = {x: 0, y: 0};
+let joystickPointerId = null;
+let joystickRect = null;
+let movementRaf = null;
+let lastMovementTs = null;
+const JOYSTICK_TRAVEL_PX = 38;     // max distance the knob moves from center
+const MOVE_SPEED_MPS = 1.8;        // walking-ish; adjust to taste
+
+function initJoystick() {
+    const stick = document.getElementById('joystick');
+    if (!stick) return;
+    const knob = stick.querySelector('.joystick-knob');
+    if (!knob) return;
+
+    function setKnob(dx, dy) {
+        // The knob stays centered via translate(-50%, -50%); add the offset
+        // through calc so we don't lose the centering trick.
+        knob.style.transform =
+            'translate(calc(-50% + ' + dx + 'px), calc(-50% + ' + dy + 'px))';
+    }
+
+    function onDown(e) {
+        if (joystickPointerId != null) return;
+        joystickPointerId = e.pointerId;
+        joystickRect = stick.getBoundingClientRect();
+        stick.classList.add('active');
+        try { stick.setPointerCapture(e.pointerId); } catch (err) { /* old browsers */ }
+        onMove(e);
+        e.preventDefault();
+    }
+
+    function onMove(e) {
+        if (e.pointerId !== joystickPointerId || !joystickRect) return;
+        const cx = joystickRect.left + joystickRect.width / 2;
+        const cy = joystickRect.top + joystickRect.height / 2;
+        let dx = e.clientX - cx;
+        let dy = e.clientY - cy;
+        const len = Math.hypot(dx, dy);
+        if (len > JOYSTICK_TRAVEL_PX) {
+            const k = JOYSTICK_TRAVEL_PX / len;
+            dx *= k;
+            dy *= k;
+        }
+        setKnob(dx, dy);
+        joystickValue.x = dx / JOYSTICK_TRAVEL_PX;
+        joystickValue.y = -dy / JOYSTICK_TRAVEL_PX; // invert: knob up = forward
+    }
+
+    function onUp(e) {
+        if (e.pointerId !== joystickPointerId) return;
+        joystickPointerId = null;
+        joystickRect = null;
+        joystickValue.x = 0;
+        joystickValue.y = 0;
+        setKnob(0, 0);
+        stick.classList.remove('active');
+    }
+
+    stick.addEventListener('pointerdown', onDown);
+    stick.addEventListener('pointermove', onMove);
+    stick.addEventListener('pointerup', onUp);
+    stick.addEventListener('pointercancel', onUp);
+    stick.addEventListener('pointerleave', onUp);
+}
+
+// Translate the A-Frame camera each frame in the direction implied by the
+// joystick + the camera's current yaw. Pitch is ignored, so looking down
+// doesn't dive you through the ground when you push forward.
+function startMovementLoop() {
+    function tick(ts) {
+        const dt = lastMovementTs == null ? 0 : (ts - lastMovementTs) / 1000;
+        lastMovementTs = ts;
+        if ((joystickValue.x !== 0 || joystickValue.y !== 0) && dt > 0 && dt < 0.25) {
+            const camEl = document.getElementById('xr-camera');
+            if (camEl && camEl.object3D) {
+                const yaw = camEl.object3D.rotation.y;
+                const sinY = Math.sin(yaw);
+                const cosY = Math.cos(yaw);
+                // forward (-Z when yaw=0): (-sin, 0, -cos)
+                // right   (+X when yaw=0): (cos, 0, -sin)
+                const vx = cosY * joystickValue.x + (-sinY) * joystickValue.y;
+                const vz = (-sinY) * joystickValue.x + (-cosY) * joystickValue.y;
+                const step = MOVE_SPEED_MPS * dt;
+                camEl.object3D.position.x += vx * step;
+                camEl.object3D.position.z += vz * step;
+            }
+        }
+        movementRaf = window.requestAnimationFrame(tick);
+    }
+    if (movementRaf) window.cancelAnimationFrame(movementRaf);
+    lastMovementTs = null;
+    movementRaf = window.requestAnimationFrame(tick);
+}
+
 function placeAtCursor() {
     if (originLat == null) {
         showToast('GPS origin not locked yet', true);
@@ -987,6 +1109,8 @@ function bootAR() {
             const onReady = function () {
                 hideLoading();
                 startPlacementReticleLoop(scene);
+                initJoystick();
+                startMovementLoop();
                 loadObjects();
                 startObjectPolling();
             };
@@ -1018,6 +1142,7 @@ function bootAR() {
 document.addEventListener('DOMContentLoaded', function () {
     loadAssetPicker();
     loadLayerPicker();
+    initPlaceBarCollapse();
 
     const startBtn = document.getElementById('start-btn');
     if (startBtn) {

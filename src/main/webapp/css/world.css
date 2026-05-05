@@ -79,11 +79,65 @@ video {
 
 .place-bar {
     width: min(340px, 92vw);
-    padding: 10px 12px;
+    padding: 6px 10px 10px;
     border-radius: 14px;
     background: rgba(0, 0, 0, 0.55);
     border: 1px solid rgba(255, 255, 255, 0.2);
     backdrop-filter: blur(6px);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.place-bar-handle {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 4px 6px;
+    background: none;
+    border: none;
+    color: #ddd;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    cursor: pointer;
+    border-radius: 8px;
+}
+
+.place-bar-handle:hover {
+    background: rgba(255, 255, 255, 0.06);
+}
+
+.place-bar-title {
+    font-weight: 600;
+}
+
+.place-bar-chevron {
+    font-size: 0.85rem;
+    transition: transform 0.18s ease;
+    line-height: 1;
+}
+
+.place-bar.collapsed {
+    /* shrink to fit just the handle so it doesn't crowd the joystick */
+    width: auto;
+    padding: 4px 6px;
+}
+
+.place-bar.collapsed .place-bar-handle {
+    padding: 6px 12px;
+    gap: 10px;
+}
+
+.place-bar.collapsed .place-bar-chevron {
+    transform: rotate(180deg);
+}
+
+.place-bar.collapsed .place-bar-body {
+    display: none;
+}
+
+.place-bar-body {
     display: flex;
     flex-direction: column;
     gap: 8px;
@@ -299,6 +353,54 @@ video {
 
 .action-button:active {
     transform: scale(0.9);
+}
+
+/* Touch joystick. Sits in the lower-left, well above the bottom HUD so the
+   place-bar never overlaps it on small screens. The knob is centered in the
+   ring and translated via JS while a pointer is captured. */
+.joystick {
+    position: fixed;
+    left: 24px;
+    bottom: 240px;
+    width: 110px;
+    height: 110px;
+    border-radius: 50%;
+    background: rgba(0, 0, 0, 0.4);
+    border: 2px solid rgba(255, 255, 255, 0.25);
+    -webkit-backdrop-filter: blur(6px);
+    backdrop-filter: blur(6px);
+    z-index: 11;
+    touch-action: none;
+    user-select: none;
+    -webkit-user-select: none;
+}
+
+.joystick.active {
+    border-color: rgba(255, 255, 255, 0.55);
+}
+
+.joystick-knob {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(211, 127, 143, 0.85);
+    border: 2px solid rgba(255, 255, 255, 0.6);
+    transform: translate(-50%, -50%);
+    pointer-events: none;
+    transition: background 0.15s;
+}
+
+.joystick.active .joystick-knob {
+    background: rgba(211, 127, 143, 1);
+}
+
+@media (orientation: landscape) and (max-height: 500px) {
+    /* Landscape phones: HUD takes most vertical space, drop the joystick low. */
+    .joystick { bottom: 24px; left: 24px; width: 90px; height: 90px; }
+    .joystick-knob { width: 36px; height: 36px; }
 }
 
 .loading-overlay {

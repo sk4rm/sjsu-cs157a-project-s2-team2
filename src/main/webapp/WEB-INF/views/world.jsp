@@ -14,7 +14,7 @@
     <title>WARP — World</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 
-    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world.css?v=w4">
+    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world.css?v=w6">
 
     <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
     <% if ("1".equals(request.getParameter("debug"))) { %>
@@ -71,32 +71,44 @@
     <a-light type="directional" intensity="0.6" position="2 4 1"></a-light>
 </a-scene>
 
+<%-- Touch joystick: drag the knob to translate the camera. Sits above the
+     bottom HUD so it never overlaps the place-bar. --%>
+<div id="joystick" class="joystick" aria-label="Movement joystick">
+    <div class="joystick-knob"></div>
+</div>
+
 <div class="hud-bottom">
-    <div class="place-bar">
-        <div class="place-modes">
-            <button type="button" class="mode-btn on" id="mode-cube" onclick="setPlaceMode('cube')">cube</button>
-            <button type="button" class="mode-btn" id="mode-sign" onclick="setPlaceMode('signpost')">signpost</button>
-        </div>
-        <label for="signpost-text"></label>
-        <input id="signpost-text" class="signpost-input" type="text" maxlength="80"
-               placeholder="signpost message (signpost mode only)" disabled>
-        <div class="layer-row">
-            <select id="layer-picker" class="signpost-input" title="Filter view by layer; also tags new placements" aria-label="Layer filter">
-                <option value="">All layers</option>
+    <div class="place-bar" id="place-bar">
+        <button type="button" class="place-bar-handle" onclick="togglePlaceBar()" aria-label="Toggle tools panel" aria-expanded="true">
+            <span class="place-bar-title">Tools</span>
+            <span class="place-bar-chevron">▾</span>
+        </button>
+        <div class="place-bar-body">
+            <div class="place-modes">
+                <button type="button" class="mode-btn on" id="mode-cube" onclick="setPlaceMode('cube')">cube</button>
+                <button type="button" class="mode-btn" id="mode-sign" onclick="setPlaceMode('signpost')">signpost</button>
+            </div>
+            <label for="signpost-text"></label>
+            <input id="signpost-text" class="signpost-input" type="text" maxlength="80"
+                   placeholder="signpost message (signpost mode only)" disabled>
+            <div class="layer-row">
+                <select id="layer-picker" class="signpost-input" title="Filter view by layer; also tags new placements" aria-label="Layer filter">
+                    <option value="">All layers</option>
+                </select>
+                <button type="button" id="layer-new-btn" class="layer-btn" title="Create a new layer" onclick="onLayerNew()">+</button>
+                <button type="button" id="layer-rename-btn" class="layer-btn" title="Rename selected layer" onclick="onLayerRename()" disabled>✎</button>
+                <button type="button" id="layer-delete-btn" class="layer-btn" title="Delete selected layer" onclick="onLayerDelete()" disabled>×</button>
+            </div>
+            <select id="asset-picker" class="signpost-input" title="Shape or uploaded model for cube placements">
+                <optgroup label="Standard props">
+                    <option value="preset:cube" selected>Cube</option>
+                    <option value="preset:bread">Bread</option>
+                    <option value="preset:stars">Stars</option>
+                </optgroup>
+                <optgroup label="Your uploads" id="asset-picker-uploads"></optgroup>
             </select>
-            <button type="button" id="layer-new-btn" class="layer-btn" title="Create a new layer" onclick="onLayerNew()">+</button>
-            <button type="button" id="layer-rename-btn" class="layer-btn" title="Rename selected layer" onclick="onLayerRename()" disabled>✎</button>
-            <button type="button" id="layer-delete-btn" class="layer-btn" title="Delete selected layer" onclick="onLayerDelete()" disabled>×</button>
+            <div class="place-hint" id="place-hint">aim the green ring, then tap + to drop</div>
         </div>
-        <select id="asset-picker" class="signpost-input" title="Shape or uploaded model for cube placements">
-            <optgroup label="Standard props">
-                <option value="preset:cube" selected>Cube</option>
-                <option value="preset:bread">Bread</option>
-                <option value="preset:stars">Stars</option>
-            </optgroup>
-            <optgroup label="Your uploads" id="asset-picker-uploads"></optgroup>
-        </select>
-        <div class="place-hint" id="place-hint">aim the green ring, then tap + to drop</div>
     </div>
     <button class="action-button" onclick="placeAtCursor()" aria-label="place">
         <svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="#333" stroke-width="2.4"
@@ -150,7 +162,7 @@
         if (v) window.WARP.votesUrl = v;
     })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=w4"></script>
-<script src="<%= request.getContextPath() %>/js/world.js?v=w4"></script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=w6"></script>
+<script src="<%= request.getContextPath() %>/js/world.js?v=w6"></script>
 </body>
 </html>
