@@ -17,7 +17,7 @@
     <title>WARP — XR</title>
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
 
-    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world-xr.css?v=xr5">
+    <link rel="stylesheet" href="<%= request.getContextPath() %>/css/world-xr.css?v=xr6">
 
     <%-- Mobile dev console: load eruda only when ?debug=1 is in the URL. --%>
     <% if ("1".equals(request.getParameter("debug"))) { %>
@@ -149,7 +149,7 @@
         if (v) window.WARP.votesUrl = v;
     })();
 </script>
-<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=xr5"></script>
-<script src="<%= request.getContextPath() %>/js/world-xr.js?v=xr5"></script>
+<script src="<%= request.getContextPath() %>/js/inspector-social.js?v=xr6"></script>
+<script src="<%= request.getContextPath() %>/js/world-xr.js?v=xr6"></script>
 </body>
 </html>

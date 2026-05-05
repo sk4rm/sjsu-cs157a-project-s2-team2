@@ -95,6 +95,27 @@ function clearPlacedObjects(scene) {
     placedIds.clear();
 }
 
+// Reconcile the scene against a server-fresh list: remove placed entities
+// whose ids vanished, add new ones. Avoids the flicker that a
+// full-clear-and-redraw caused on every poll tick.
+function applyObjectsList(scene, list) {
+    if (!scene) return;
+    const fresh = new Set();
+    list.forEach(function (o) {
+        if (o && o.id != null) fresh.add(o.id);
+    });
+    const toRemove = [];
+    placedIds.forEach(function (id) {
+        if (!fresh.has(id)) toRemove.push(id);
+    });
+    toRemove.forEach(function (id) {
+        const el = document.getElementById('obj-' + id);
+        if (el) el.remove();
+        placedIds.delete(id);
+    });
+    list.forEach(function (obj) { placeObjectInScene(scene, obj); });
+}
+
 function openInspector(obj) {
     selectedObjectId = obj.id;
     document.getElementById('inspector-title').innerText = obj.type === 'signpost' ? 'Signpost' : 'Prop';
@@ -504,10 +525,7 @@ function loadObjects() {
         .then(function (list) {
             if (!Array.isArray(list)) list = (list && list.objects) || [];
             list = filterObjectsByLayer(list);
-            clearPlacedObjects(scene);
-            list.forEach(function (obj) {
-                placeObjectInScene(scene, obj);
-            });
+            applyObjectsList(scene, list);
             const sel = document.getElementById('layer-picker');
             const layerNote = (sel && sel.value) ? ' (layer filter)' : '';
             setStatus('status-objects', '<strong>Props</strong>: ' + placedIds.size + ' nearby' + layerNote);
@@ -516,6 +534,23 @@ function loadObjects() {
         .catch(function () {
             setStatus('status-objects', '<strong>Props</strong>: load failed');
         });
+}
+
+// Background poll so other users' placements + deletions show up without a
+// page refresh. Skips ticks when the tab is hidden, the boot is incomplete,
+// or the inspector is open (so a remote delete doesn't yank a panel out from
+// under the user mid-read).
+const POLL_INTERVAL_MS = 15000;
+let pollTimer = null;
+
+function startObjectPolling() {
+    if (pollTimer != null) clearInterval(pollTimer);
+    pollTimer = setInterval(function () {
+        if (originLat == null) return;
+        if (document.visibilityState && document.visibilityState !== 'visible') return;
+        if (selectedObjectId != null) return;
+        loadObjects();
+    }, POLL_INTERVAL_MS);
 }
 
 // Ray from screen-center through the camera frustum, intersected with the
@@ -670,6 +705,7 @@ function bootAR() {
                 hideLoading();
                 startPlacementReticleLoop(scene);
                 loadObjects();
+                startObjectPolling();
             };
             if (scene && scene.hasLoaded) onReady();
             else if (scene) scene.addEventListener('loaded', onReady, {once: true});
